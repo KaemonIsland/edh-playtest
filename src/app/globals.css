@@ -1,0 +1,18 @@
+@import "tailwindcss";
+
+html,
+body {
+  height: 100%;
+  background: #08080a;
+  color-scheme: dark;
+}
+
+/* Hide scrollbars on the battlefield chrome but keep scrolling */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #44403c;
+  border-radius: 3px;
+}
