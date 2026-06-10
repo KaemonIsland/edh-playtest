@@ -34,6 +34,26 @@ interface UiPrefs {
   drawOnTurn: boolean;
   snapToGrid: boolean;
   showPhaseStepper: boolean;
+  /** Card width in px (height is width × 1.4). Accessibility sizing. */
+  cardSize: number;
+}
+
+const PREFS_KEY = "edh-playtest:prefs";
+const DEFAULT_PREFS: UiPrefs = {
+  drawOnTurn: true,
+  snapToGrid: false,
+  showPhaseStepper: false,
+  cardSize: 100,
+};
+
+function loadPrefs(): UiPrefs {
+  if (typeof window === "undefined") return DEFAULT_PREFS;
+  try {
+    const raw = window.localStorage.getItem(PREFS_KEY);
+    return raw ? { ...DEFAULT_PREFS, ...(JSON.parse(raw) as Partial<UiPrefs>) } : DEFAULT_PREFS;
+  } catch {
+    return DEFAULT_PREFS;
+  }
 }
 
 export interface GameStore extends GameCore {
@@ -60,11 +80,18 @@ export interface GameStore extends GameCore {
   // card movement & state
   moveCard: (instanceId: string, to: Zone, opts?: MoveOptions) => void;
   setPosition: (instanceId: string, pos: { x: number; y: number }) => void;
+  /** Move several battlefield cards at once (one undo step). */
+  setPositions: (updates: Record<string, { x: number; y: number }>) => void;
   toggleTap: (instanceId: string) => void;
+  /** Tap/untap a selection together: all end up opposite the reference card. */
+  toggleTapMany: (instanceIds: string[], referenceId: string) => void;
   untapAll: () => void;
   setFaceDown: (instanceId: string, faceDown: boolean) => void;
   flipFace: (instanceId: string) => void;
   addCounterOnCard: (instanceId: string, name: string, delta: number) => void;
+  tapAll: () => void;
+  /** Add one of every counter already on your permanents (and your poison/energy/experience). */
+  proliferate: () => void;
   attach: (instanceId: string, hostId: string) => void;
   unattach: (instanceId: string) => void;
   createToken: (spec: TokenSpec, count?: number) => void;
@@ -247,7 +274,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     started: false,
     history: [],
     future: [],
-    prefs: { drawOnTurn: true, snapToGrid: false, showPhaseStepper: false },
+    prefs: loadPrefs(),
 
     loadDeck: (deck) => {
       const cards: Record<string, ScryCard> = {};
@@ -441,6 +468,37 @@ export const useGameStore = create<GameStore>((set, get) => {
       });
     },
 
+    setPositions: (updates) => {
+      mutate((core) => {
+        for (const [id, pos] of Object.entries(updates)) {
+          const inst = core.instances[id];
+          if (inst && inst.zone === "battlefield") inst.position = pos;
+        }
+      });
+    },
+
+    toggleTapMany: (instanceIds, referenceId) => {
+      const s = get();
+      mutate((core) => {
+        const ref = core.instances[referenceId];
+        if (!ref) return;
+        const nextTapped = !ref.tapped;
+        const names: string[] = [];
+        for (const id of instanceIds) {
+          const inst = core.instances[id];
+          if (!inst || inst.zone !== "battlefield") continue;
+          inst.tapped = nextTapped;
+          names.push(cardName({ ...core, cards: s.cards }, inst));
+        }
+        pushLog(core, PLAYER_ID, {
+          type: "tap",
+          cardName: names.join(", "),
+          tapped: nextTapped,
+          message: `${nextTapped ? "Tapped" : "Untapped"} ${names.length} cards: ${names.join(", ")}.`,
+        });
+      });
+    },
+
     toggleTap: (instanceId) => {
       const s = get();
       mutate((core) => {
@@ -456,6 +514,50 @@ export const useGameStore = create<GameStore>((set, get) => {
         });
       });
     },
+
+    tapAll: () =>
+      mutate((core) => {
+        let n = 0;
+        for (const inst of Object.values(core.instances)) {
+          if (inst.ownerId === PLAYER_ID && inst.zone === "battlefield" && !inst.tapped) {
+            inst.tapped = true;
+            n++;
+          }
+        }
+        pushLog(core, PLAYER_ID, {
+          type: "game",
+          message: `Tapped all permanents (${n}).`,
+        });
+      }),
+
+    proliferate: () =>
+      mutate((core) => {
+        let n = 0;
+        for (const inst of Object.values(core.instances)) {
+          if (inst.ownerId !== PLAYER_ID || inst.zone !== "battlefield") continue;
+          for (const name of Object.keys(inst.counters)) {
+            inst.counters[name] = (inst.counters[name] ?? 0) + 1;
+            n++;
+          }
+        }
+        const p = core.players[PLAYER_ID];
+        if (p) {
+          for (const tracker of ["poison", "energy", "experience"] as const) {
+            if (p[tracker] > 0) {
+              p[tracker] += 1;
+              n++;
+            }
+          }
+          for (const name of Object.keys(p.counters)) {
+            p.counters[name] = (p.counters[name] ?? 0) + 1;
+            n++;
+          }
+        }
+        pushLog(core, PLAYER_ID, {
+          type: "game",
+          message: `Proliferated — incremented ${n} counter${n === 1 ? "" : "s"}.`,
+        });
+      }),
 
     untapAll: () =>
       mutate((core) => {
@@ -938,7 +1040,15 @@ export const useGameStore = create<GameStore>((set, get) => {
         pushLog(core, PLAYER_ID, { type: "game", message });
       }),
 
-    setPref: (key, value) => set((s) => ({ prefs: { ...s.prefs, [key]: value } })),
+    setPref: (key, value) => {
+      const prefs = { ...get().prefs, [key]: value };
+      set({ prefs });
+      try {
+        window.localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+      } catch {
+        // private mode / quota — non-fatal
+      }
+    },
 
     restoreCore: (core, cards) => {
       const cardMap: Record<string, ScryCard> = {};

@@ -9,9 +9,6 @@ import { useUiStore } from "@/lib/game/uiStore";
 import { CardImage } from "@/components/cards/CardImage";
 import { buildCardMenu } from "./cardMenu";
 
-const HAND_CARD_W = 110;
-const HAND_CARD_H = 154;
-
 function HandCard({
   inst,
   card,
@@ -24,6 +21,7 @@ function HandCard({
   total: number;
 }) {
   const moveCard = useGameStore((s) => s.moveCard);
+  const cardSize = useGameStore((s) => s.prefs.cardSize);
   const openMenu = useUiStore((s) => s.openMenu);
   const setPreview = useUiStore((s) => s.setPreview);
   const bottoming = useUiStore((s) => s.bottoming);
@@ -35,6 +33,10 @@ function HandCard({
     data: { zone: "hand" },
     disabled: bottoming > 0,
   });
+
+  // Hand cards render slightly larger than battlefield cards.
+  const w = Math.round(cardSize * 1.1);
+  const h = Math.round(w * 1.4);
 
   // Fan math: spread cards along an arc centred on the hand.
   const mid = (total - 1) / 2;
@@ -53,7 +55,7 @@ function HandCard({
       whileHover={{ y: lift - 36, rotate: 0, scale: 1.12, zIndex: 30 }}
       transition={{ type: "spring", stiffness: 380, damping: 28 }}
       className={`relative -ml-8 cursor-grab touch-none first:ml-0 ${selected ? "outline-3 outline-rose-500" : ""}`}
-      style={{ width: HAND_CARD_W, height: HAND_CARD_H, zIndex: index }}
+      style={{ width: w, height: h, zIndex: index }}
       onContextMenu={(e) => {
         e.preventDefault();
         openMenu(e.clientX, e.clientY, buildCardMenu(inst.instanceId));

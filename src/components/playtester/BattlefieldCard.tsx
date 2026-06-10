@@ -5,8 +5,8 @@ import { useDraggable } from "@dnd-kit/core";
 import { motion } from "framer-motion";
 import type { CardInstance, ScryCard } from "@/types";
 import { useGameStore } from "@/lib/game/store";
-import { useUiStore } from "@/lib/game/uiStore";
-import { CardImage, CARD_H, CARD_W } from "@/components/cards/CardImage";
+import { justFinishedDrag, useUiStore } from "@/lib/game/uiStore";
+import { CardImage } from "@/components/cards/CardImage";
 import { buildCardMenu } from "./cardMenu";
 
 interface Props {
@@ -23,13 +23,16 @@ export const BattlefieldCard = memo(function BattlefieldCard({
   sick,
 }: Props) {
   const toggleTap = useGameStore((s) => s.toggleTap);
+  const toggleTapMany = useGameStore((s) => s.toggleTapMany);
   const attachAction = useGameStore((s) => s.attach);
   const instances = useGameStore((s) => s.instances);
   const cards = useGameStore((s) => s.cards);
+  const cardSize = useGameStore((s) => s.prefs.cardSize);
   const openMenu = useUiStore((s) => s.openMenu);
   const setPreview = useUiStore((s) => s.setPreview);
   const attachSource = useUiStore((s) => s.attachSource);
   const setAttachSource = useUiStore((s) => s.setAttachSource);
+  const selected = useUiStore((s) => s.selected.includes(inst.instanceId));
   const longPress = useRef<number | null>(null);
 
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -37,8 +40,10 @@ export const BattlefieldCard = memo(function BattlefieldCard({
     data: { zone: "battlefield" },
   });
 
-  const x = inst.position?.x ?? 24 + (fallbackIndex % 7) * (CARD_W + 14);
-  const y = inst.position?.y ?? 24 + Math.floor(fallbackIndex / 7) * (CARD_H + 18);
+  const w = cardSize;
+  const h = Math.round(cardSize * 1.4);
+  const x = inst.position?.x ?? 24 + (fallbackIndex % 7) * (w + 14);
+  const y = inst.position?.y ?? 24 + Math.floor(fallbackIndex / 7) * (h + 18);
 
   const openContext = (cx: number, cy: number) => {
     openMenu(cx, cy, buildCardMenu(inst.instanceId));
@@ -51,13 +56,19 @@ export const BattlefieldCard = memo(function BattlefieldCard({
       ref={setNodeRef}
       {...listeners}
       {...attributes}
+      data-bf-card
+      data-instance-id={inst.instanceId}
       className="absolute touch-none"
       style={{ left: x, top: y, zIndex: isDragging ? 50 : inst.tapped ? 1 : 2, opacity: isDragging ? 0.3 : 1 }}
       onContextMenu={(e) => {
         e.preventDefault();
+        e.stopPropagation();
         openContext(e.clientX, e.clientY);
       }}
       onPointerDown={(e) => {
+        // Defining onPointerDown after {...listeners} replaces dnd-kit's
+        // activation handler, so forward to it first or dragging breaks.
+        listeners?.onPointerDown?.(e);
         if (e.pointerType === "touch") {
           longPress.current = window.setTimeout(() => {
             if (!useUiStore.getState().dragging) openContext(e.clientX, e.clientY);
@@ -71,13 +82,21 @@ export const BattlefieldCard = memo(function BattlefieldCard({
         if (longPress.current) window.clearTimeout(longPress.current);
       }}
       onClick={(e) => {
+        e.stopPropagation();
+        if (justFinishedDrag()) return; // the click that trails a drop
         if (attachSource) {
           if (attachSource !== inst.instanceId) attachAction(attachSource, inst.instanceId);
           setAttachSource(null);
-          e.stopPropagation();
+          return;
+        }
+        // Single click taps; clicking a selected card taps the whole selection.
+        const selection = useUiStore.getState().selected;
+        if (selection.includes(inst.instanceId) && selection.length > 1) {
+          toggleTapMany(selection, inst.instanceId);
+        } else {
+          toggleTap(inst.instanceId);
         }
       }}
-      onDoubleClick={() => toggleTap(inst.instanceId)}
       onMouseEnter={() => setPreview({ card, tokenSpec: inst.tokenSpec, flipped: inst.flipped })}
       onMouseLeave={() => setPreview(null)}
     >
@@ -89,7 +108,7 @@ export const BattlefieldCard = memo(function BattlefieldCard({
           <motion.div
             key={id}
             className="absolute"
-            style={{ top: (i + 1) * 26, left: (i + 1) * 8, zIndex: -1 - i }}
+            style={{ top: (i + 1) * Math.round(h * 0.19), left: (i + 1) * Math.round(w * 0.08), zIndex: -1 - i }}
             onContextMenu={(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -105,7 +124,8 @@ export const BattlefieldCard = memo(function BattlefieldCard({
               tokenSpec={child.tokenSpec}
               flipped={child.flipped}
               faceDown={child.faceDown}
-              className="h-[140px] w-[100px] ring-1 ring-stone-700"
+              className="ring-1 ring-stone-700"
+              style={{ width: w, height: h }}
             />
           </motion.div>
         );
@@ -115,9 +135,9 @@ export const BattlefieldCard = memo(function BattlefieldCard({
         animate={{ rotate: inst.tapped ? 90 : 0 }}
         transition={{ type: "spring", stiffness: 420, damping: 32 }}
         className={`relative rounded-[7%] ${
-          isAttachTarget ? "ring-2 ring-emerald-400" : ""
+          isAttachTarget ? "ring-2 ring-emerald-400" : selected ? "ring-2 ring-sky-400" : ""
         } ${sick ? "ring-1 ring-amber-500/70" : ""}`}
-        style={{ width: CARD_W, height: CARD_H }}
+        style={{ width: w, height: h }}
       >
         <CardImage
           card={card}
@@ -135,15 +155,16 @@ export const BattlefieldCard = memo(function BattlefieldCard({
           </span>
         )}
         {inst.isToken && (
-          <span className="absolute top-0.5 right-0.5 rounded bg-black/70 px-1 text-[8px] text-stone-300">
+          <span className="absolute bottom-0.5 left-0.5 rounded bg-black/70 px-1 text-[8px] text-stone-300">
             T
           </span>
         )}
+        {/* Counters: top-right, stacked just below the mana cost line. */}
         {Object.entries(inst.counters).map(([name, count], i) => (
           <span
             key={name}
             className="absolute right-0.5 rounded-full bg-emerald-600 px-1.5 py-0.5 text-[9px] font-bold text-white shadow"
-            style={{ bottom: 2 + i * 18 }}
+            style={{ top: Math.round(h * 0.13) + i * 18 }}
             title={`${name} counters`}
           >
             {name === "+1/+1" ? `+${count}/+${count}` : `${name}: ${count}`}

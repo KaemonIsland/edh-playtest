@@ -27,6 +27,7 @@ interface CardImageProps {
   flipped?: number;
   faceDown?: boolean;
   className?: string;
+  style?: React.CSSProperties;
 }
 
 /** Renders one card visual: Scryfall image, custom-token frame, or card back. */
@@ -36,10 +37,12 @@ export const CardImage = memo(function CardImage({
   flipped = 0,
   faceDown = false,
   className = "",
+  style,
 }: CardImageProps) {
   if (faceDown) {
     return (
       <div
+        style={style}
         className={`flex items-center justify-center rounded-[7%] border border-stone-600 bg-gradient-to-br from-amber-900 via-amber-950 to-stone-950 ${className}`}
       >
         <div className="h-1/2 w-1/2 rounded-full bg-gradient-to-br from-amber-700 to-amber-950 opacity-70" />
@@ -56,6 +59,7 @@ export const CardImage = memo(function CardImage({
         alt={card ? activeFace(card, flipped).name : (tokenSpec?.name ?? "card")}
         draggable={false}
         loading="lazy"
+        style={style}
         className={`rounded-[5%] object-cover select-none ${className}`}
       />
     );
@@ -73,6 +77,7 @@ export const CardImage = memo(function CardImage({
 
   return (
     <div
+      style={style}
       className={`flex flex-col justify-between rounded-[7%] border border-stone-500 bg-gradient-to-br p-1.5 ${tokenBg(
         tokenSpec?.colors ?? card?.colors ?? [],
       )} ${className}`}

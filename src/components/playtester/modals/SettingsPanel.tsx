@@ -36,9 +36,52 @@ export function SettingsPanel() {
     </button>
   );
 
+  const SIZE_PRESETS = [
+    { label: "Small", value: 80 },
+    { label: "Default", value: 100 },
+    { label: "Large", value: 120 },
+    { label: "X-Large", value: 145 },
+  ];
+
   return (
     <Modal title="Settings">
       <div className="flex flex-col gap-2">
+        <div className="rounded-md bg-stone-900 px-3 py-2.5">
+          <div className="text-xs font-semibold text-stone-200">Card size</div>
+          <div className="mb-2 text-[10px] text-stone-500">
+            Adjust the table's card size to what's comfortable for you.
+          </div>
+          <div className="flex items-center gap-2">
+            {SIZE_PRESETS.map((p) => (
+              <button
+                key={p.value}
+                onClick={() => setPref("cardSize", p.value)}
+                className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition ${
+                  prefs.cardSize === p.value
+                    ? "bg-emerald-700 text-white"
+                    : "bg-stone-800 text-stone-400 hover:bg-stone-700"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <div className="mt-2 flex items-center gap-3">
+            <input
+              type="range"
+              min={70}
+              max={160}
+              step={5}
+              value={prefs.cardSize}
+              onChange={(e) => setPref("cardSize", parseInt(e.target.value, 10))}
+              className="w-full accent-emerald-600"
+              aria-label="Card size"
+            />
+            <span className="w-12 text-right font-mono text-xs text-stone-400">
+              {prefs.cardSize}px
+            </span>
+          </div>
+        </div>
         <Toggle
           label="Draw on next turn"
           hint="“Next turn” untaps everything and draws a card for turn."

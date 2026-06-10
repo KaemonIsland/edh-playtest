@@ -9,6 +9,17 @@ export interface MenuItem {
   danger?: boolean;
   separator?: boolean;
   disabled?: boolean;
+  /** Submenu items — rendered as a flyout ("Move to ▸"). */
+  children?: MenuItem[];
+  /** Small leading icon (emoji / glyph). */
+  icon?: string;
+  /** Right-aligned hint, e.g. a keybind ("U"). */
+  hint?: string;
+  /**
+   * Inline counter row: label + [− count + 🗑]. Clicks keep the menu open;
+   * callbacks should refresh the menu items themselves.
+   */
+  counter?: { count: number; onInc: () => void; onDec: () => void; onRemove: () => void };
 }
 
 export type ModalKind =
@@ -37,11 +48,17 @@ interface UiStore {
   bottomingSelected: string[];
   /** Set while a dnd-kit drag is active so long-press menus stay closed. */
   dragging: boolean;
+  /** When the last drag ended — used to swallow the click that follows a drop. */
+  lastDragEndAt: number;
   attachSource: string | null;
+  /** Marquee-selected battlefield cards. */
+  selected: string[];
 
   openModal: (modal: ModalKind) => void;
   closeModal: () => void;
   openMenu: (x: number, y: number, items: MenuItem[]) => void;
+  /** Swap the open menu's items in place (used by inline counter rows). */
+  refreshMenu: (items: MenuItem[]) => void;
   closeMenu: () => void;
   setPreview: (preview: PreviewCard | null) => void;
   setLogOpen: (open: boolean) => void;
@@ -50,6 +67,8 @@ interface UiStore {
   clearBottoming: () => void;
   setDragging: (dragging: boolean) => void;
   setAttachSource: (instanceId: string | null) => void;
+  setSelected: (ids: string[]) => void;
+  clearSelected: () => void;
 }
 
 export const useUiStore = create<UiStore>((set, get) => ({
@@ -60,11 +79,14 @@ export const useUiStore = create<UiStore>((set, get) => ({
   bottoming: 0,
   bottomingSelected: [],
   dragging: false,
+  lastDragEndAt: 0,
   attachSource: null,
+  selected: [],
 
   openModal: (modal) => set({ modal, menu: null }),
   closeModal: () => set({ modal: { kind: "none" } }),
   openMenu: (x, y, items) => set({ menu: { x, y, items } }),
+  refreshMenu: (items) => set((s) => (s.menu ? { menu: { ...s.menu, items } } : {})),
   closeMenu: () => set({ menu: null }),
   setPreview: (preview) => set({ preview }),
   setLogOpen: (logOpen) => set({ logOpen }),
@@ -78,6 +100,17 @@ export const useUiStore = create<UiStore>((set, get) => ({
     }
   },
   clearBottoming: () => set({ bottoming: 0, bottomingSelected: [] }),
-  setDragging: (dragging) => set({ dragging, ...(dragging ? { menu: null, preview: null } : {}) }),
+  setDragging: (dragging) =>
+    set({
+      dragging,
+      ...(dragging ? { menu: null, preview: null } : { lastDragEndAt: Date.now() }),
+    }),
   setAttachSource: (instanceId) => set({ attachSource: instanceId }),
+  setSelected: (ids) => set({ selected: ids }),
+  clearSelected: () => set({ selected: [] }),
 }));
+
+/** True right after a drop, so click handlers can ignore the trailing click. */
+export function justFinishedDrag(): boolean {
+  return Date.now() - useUiStore.getState().lastDragEndAt < 200;
+}

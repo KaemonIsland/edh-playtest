@@ -15,7 +15,7 @@ import type { Zone } from "@/types";
 import { useGameStore } from "@/lib/game/store";
 import { useUiStore } from "@/lib/game/uiStore";
 import { loadKeybinds, type KeybindMap } from "@/lib/game/keybinds";
-import { CardImage, CARD_H, CARD_W } from "@/components/cards/CardImage";
+import { CardImage } from "@/components/cards/CardImage";
 import { HoverPreview } from "@/components/cards/HoverPreview";
 import { Battlefield } from "./Battlefield";
 import { HandFan } from "./HandFan";
@@ -67,23 +67,36 @@ export function PlaytesterRoot() {
 
     if (zone === "battlefield") {
       const surface = document.getElementById("battlefield-surface");
+      const w = g.prefs.cardSize;
+      const h = Math.round(w * 1.4);
+      const snap = (v: number) => (g.prefs.snapToGrid ? Math.round(v / GRID) * GRID : v);
       const translated = e.active.rect.current.translated;
       let position: { x: number; y: number } | undefined;
       if (surface && translated) {
         const rect = surface.getBoundingClientRect();
-        let x = translated.left - rect.left;
-        let y = translated.top - rect.top;
-        if (g.prefs.snapToGrid) {
-          x = Math.round(x / GRID) * GRID;
-          y = Math.round(y / GRID) * GRID;
-        }
         position = {
-          x: Math.max(0, Math.min(x, rect.width - CARD_W)),
-          y: Math.max(0, Math.min(y, rect.height - CARD_H)),
+          x: Math.max(0, Math.min(snap(translated.left - rect.left), rect.width - w)),
+          y: Math.max(0, Math.min(snap(translated.top - rect.top), rect.height - h)),
         };
       }
       if (inst.zone === "battlefield") {
-        if (position) g.setPosition(instanceId, position);
+        const selection = useUiStore.getState().selected;
+        if (surface && selection.length > 1 && selection.includes(instanceId)) {
+          // Group move: shift every selected card by the drag delta.
+          const rect = surface.getBoundingClientRect();
+          const updates: Record<string, { x: number; y: number }> = {};
+          for (const id of selection) {
+            const el = surface.querySelector<HTMLElement>(`[data-instance-id="${CSS.escape(id)}"]`);
+            if (!el) continue;
+            updates[id] = {
+              x: Math.max(0, Math.min(snap(el.offsetLeft + e.delta.x), rect.width - w)),
+              y: Math.max(0, Math.min(snap(el.offsetTop + e.delta.y), rect.height - h)),
+            };
+          }
+          g.setPositions(updates);
+        } else if (position) {
+          g.setPosition(instanceId, position);
+        }
       } else {
         g.moveCard(instanceId, "battlefield", { position });
       }
@@ -169,7 +182,8 @@ export function PlaytesterRoot() {
             tokenSpec={dragInst.tokenSpec}
             flipped={dragInst.flipped}
             faceDown={dragInst.faceDown && dragInst.zone !== "hand"}
-            className="h-[140px] w-[100px] rotate-3 shadow-2xl shadow-black"
+            className="rotate-3 shadow-2xl shadow-black"
+            style={{ width: g.prefs.cardSize, height: Math.round(g.prefs.cardSize * 1.4) }}
           />
         )}
       </DragOverlay>
