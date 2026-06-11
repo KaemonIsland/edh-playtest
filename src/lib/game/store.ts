@@ -18,7 +18,19 @@ import { uid } from "./ids";
 import { shuffled } from "./shuffle";
 
 export const PLAYER_ID = "you";
+/** Bot player ids are bot1..bot3. Kept for single-bot call sites. */
+export const BOT_ID = "bot1";
+export const MAX_OPPONENTS = 3;
 const HISTORY_LIMIT = 200;
+
+export function isBotId(playerId: string): boolean {
+  return playerId !== PLAYER_ID;
+}
+
+/** Who controls a card right now (theft-aware). */
+export function controllerOf(inst: CardInstance): string {
+  return inst.controllerId ?? inst.ownerId;
+}
 
 export type LibraryPlacement = "top" | "bottom" | "shuffle";
 
@@ -28,7 +40,11 @@ export interface MoveOptions {
   /** Insert index for ordered zones (library top = 0). */
   index?: number;
   silent?: boolean;
+  /** Battlefield only: who gains control (card theft). Defaults to the owner. */
+  controllerId?: string;
 }
+
+export type LayoutMode = "stacked" | "side-left" | "side-right";
 
 interface UiPrefs {
   drawOnTurn: boolean;
@@ -36,6 +52,8 @@ interface UiPrefs {
   showPhaseStepper: boolean;
   /** Card width in px (height is width × 1.4). Accessibility sizing. */
   cardSize: number;
+  /** Opponent board placement: stacked on top, or beside (ultra-wide). */
+  layoutMode: LayoutMode;
 }
 
 const PREFS_KEY = "edh-playtest:prefs";
@@ -44,6 +62,7 @@ const DEFAULT_PREFS: UiPrefs = {
   snapToGrid: false,
   showPhaseStepper: false,
   cardSize: 100,
+  layoutMode: "stacked",
 };
 
 function loadPrefs(): UiPrefs {
@@ -60,6 +79,8 @@ export interface GameStore extends GameCore {
   /** Static card data, keyed by Scryfall print id. Not part of undo history. */
   cards: Record<string, ScryCard>;
   deck: Deck | null;
+  /** Opponent decks (up to MAX_OPPONENTS) — startGame creates bot1..botN. */
+  botDecks: Deck[];
   started: boolean;
   history: GameCore[];
   future: GameCore[];
@@ -67,6 +88,7 @@ export interface GameStore extends GameCore {
 
   // lifecycle
   loadDeck: (deck: Deck) => void;
+  loadBotDecks: (decks: Deck[]) => void;
   startGame: () => void;
   mulligan: () => void;
   /** Finish a London mulligan: bottom the given hand cards. */
@@ -85,7 +107,9 @@ export interface GameStore extends GameCore {
   toggleTap: (instanceId: string) => void;
   /** Tap/untap a selection together: all end up opposite the reference card. */
   toggleTapMany: (instanceIds: string[], referenceId: string) => void;
-  untapAll: () => void;
+  /** Tap specific cards in one undo step (bot mana payments, attacks). */
+  tapCards: (instanceIds: string[], reason?: string) => void;
+  untapAll: (playerId?: string) => void;
   setFaceDown: (instanceId: string, faceDown: boolean) => void;
   flipFace: (instanceId: string) => void;
   addCounterOnCard: (instanceId: string, name: string, delta: number) => void;
@@ -100,9 +124,9 @@ export interface GameStore extends GameCore {
   removeInstance: (instanceId: string) => void;
 
   // library
-  draw: (n?: number) => void;
+  draw: (n?: number, playerId?: string) => void;
   mill: (n: number) => void;
-  shuffleLibrary: () => void;
+  shuffleLibrary: (playerId?: string) => void;
   revealTop: () => void;
   /** Reorder the top N of the library (scry/surveil result). */
   resolveTopCards: (
@@ -127,8 +151,12 @@ export interface GameStore extends GameCore {
 
   // turn structure
   nextTurn: () => void;
+  /** Start a player's turn: turn++, set active, untap theirs, draw for turn. */
+  beginPlayerTurn: (playerId: string, draw?: boolean) => void;
   nextPhase: () => void;
   setPhase: (phase: Phase) => void;
+  /** Typed bot log entry with optional reasoning (FSM transparency). */
+  logBot: (message: string, reasoning?: string) => void;
 
   // dice & misc
   rollDie: (sides: number) => number;
@@ -196,12 +224,60 @@ function cardName(s: GameCore & { cards: Record<string, ScryCard> }, inst: CardI
   return s.cards[inst.cardId]?.name ?? "Unknown card";
 }
 
+/** Add a player to the core: commanders to command zone, shuffled library, 7-card hand. */
+function setupPlayer(core: GameCore, deck: Deck, playerId: string, name: string) {
+  const player = makePlayer(playerId, name);
+  player.commanderOracleIds = deck.commanders.map((c) => c.oracle_id);
+  for (const c of deck.commanders) player.commanderTax[c.oracle_id] = 0;
+  core.players[playerId] = player;
+  if (!core.playerOrder.includes(playerId)) core.playerOrder.push(playerId);
+  core.zoneOrder[playerId] = emptyZones();
+
+  const newInstance = (card: ScryCard, zone: Zone): CardInstance => {
+    const inst: CardInstance = {
+      instanceId: uid(),
+      cardId: card.id,
+      oracleId: card.oracle_id,
+      ownerId: playerId,
+      zone,
+      tapped: false,
+      faceDown: false,
+      flipped: 0,
+      counters: {},
+      attachments: [],
+      isToken: false,
+    };
+    core.instances[inst.instanceId] = inst;
+    return inst;
+  };
+
+  const libraryIds: string[] = [];
+  for (const entry of deck.entries) {
+    if (entry.isCommander) continue;
+    for (let i = 0; i < entry.quantity; i++) {
+      libraryIds.push(newInstance(entry.card, "library").instanceId);
+    }
+  }
+  core.zoneOrder[playerId]!.library = shuffled(libraryIds);
+
+  for (const cmd of deck.commanders) {
+    core.zoneOrder[playerId]!.command.push(newInstance(cmd, "command").instanceId);
+  }
+
+  const zones = core.zoneOrder[playerId]!;
+  const drawn = zones.library.splice(0, 7);
+  for (const id of drawn) core.instances[id]!.zone = "hand";
+  zones.hand = drawn;
+}
+
 function pushLog(core: GameCore, playerId: string, event: LogEvent) {
   core.log.push({ id: uid("log"), ts: Date.now(), turn: core.turn, playerId, event });
 }
 
 function removeFromZone(core: GameCore, inst: CardInstance) {
-  const order = core.zoneOrder[inst.ownerId]?.[inst.zone];
+  // Battlefield cards live in their controller's list (theft-aware).
+  const holder = inst.zone === "battlefield" ? controllerOf(inst) : inst.ownerId;
+  const order = core.zoneOrder[holder]?.[inst.zone];
   if (order) {
     const idx = order.indexOf(inst.instanceId);
     if (idx >= 0) order.splice(idx, 1);
@@ -224,7 +300,16 @@ function breakAttachments(core: GameCore, inst: CardInstance) {
 
 function placeInZone(core: GameCore, inst: CardInstance, to: Zone, opts: MoveOptions) {
   removeFromZone(core, inst);
-  const order = core.zoneOrder[inst.ownerId]![to];
+  // Battlefield placement follows the (possibly new) controller; every other
+  // zone returns the card to its owner.
+  if (to === "battlefield") {
+    const ctrl = opts.controllerId ?? controllerOf(inst);
+    inst.controllerId = ctrl === inst.ownerId ? undefined : ctrl;
+  } else {
+    inst.controllerId = undefined;
+  }
+  const holder = to === "battlefield" ? controllerOf(inst) : inst.ownerId;
+  const order = core.zoneOrder[holder]![to];
   if (to === "library") {
     if (opts.libraryPlacement === "bottom") order.push(inst.instanceId);
     else if (opts.libraryPlacement === "shuffle") {
@@ -249,7 +334,7 @@ function placeInZone(core: GameCore, inst: CardInstance, to: Zone, opts: MoveOpt
     if (opts.position) inst.position = opts.position;
   }
   if (opts.libraryPlacement === "shuffle" && to === "library") {
-    core.zoneOrder[inst.ownerId]![to] = shuffled(order);
+    core.zoneOrder[inst.ownerId]!.library = shuffled(order);
   }
 }
 
@@ -271,6 +356,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     ...emptyCore(),
     cards: {},
     deck: null,
+    botDecks: [],
     started: false,
     history: [],
     future: [],
@@ -280,67 +366,48 @@ export const useGameStore = create<GameStore>((set, get) => {
       const cards: Record<string, ScryCard> = {};
       for (const entry of deck.entries) cards[entry.card.id] = entry.card;
       for (const cmd of deck.commanders) cards[cmd.id] = cmd;
+      // keep any bot deck cards that were already registered
+      for (const botDeck of get().botDecks) {
+        for (const entry of botDeck.entries) cards[entry.card.id] = entry.card;
+        for (const cmd of botDeck.commanders) cards[cmd.id] = cmd;
+      }
       set({ ...emptyCore(), cards, deck, started: false, history: [], future: [] });
     },
 
+    loadBotDecks: (decks) => {
+      const botDecks = decks.slice(0, MAX_OPPONENTS);
+      const cards = { ...get().cards };
+      for (const botDeck of botDecks) {
+        for (const entry of botDeck.entries) cards[entry.card.id] = entry.card;
+        for (const cmd of botDeck.commanders) cards[cmd.id] = cmd;
+      }
+      set({ cards, botDecks });
+    },
+
     startGame: () => {
-      const { deck } = get();
+      const { deck, botDecks } = get();
       if (!deck) return;
-      const core = emptyCore();
-      const player = core.players[PLAYER_ID]!;
-      player.commanderOracleIds = deck.commanders.map((c) => c.oracle_id);
-      for (const c of deck.commanders) player.commanderTax[c.oracle_id] = 0;
-
-      const libraryIds: string[] = [];
-      for (const entry of deck.entries) {
-        if (entry.isCommander) continue;
-        for (let i = 0; i < entry.quantity; i++) {
-          const inst: CardInstance = {
-            instanceId: uid(),
-            cardId: entry.card.id,
-            oracleId: entry.card.oracle_id,
-            ownerId: PLAYER_ID,
-            zone: "library",
-            tapped: false,
-            faceDown: false,
-            flipped: 0,
-            counters: {},
-            attachments: [],
-            isToken: false,
-          };
-          core.instances[inst.instanceId] = inst;
-          libraryIds.push(inst.instanceId);
-        }
-      }
-      core.zoneOrder[PLAYER_ID]!.library = shuffled(libraryIds);
-
-      for (const cmd of deck.commanders) {
-        const inst: CardInstance = {
-          instanceId: uid(),
-          cardId: cmd.id,
-          oracleId: cmd.oracle_id,
-          ownerId: PLAYER_ID,
-          zone: "command",
-          tapped: false,
-          faceDown: false,
-          flipped: 0,
-          counters: {},
-          attachments: [],
-          isToken: false,
-        };
-        core.instances[inst.instanceId] = inst;
-        core.zoneOrder[PLAYER_ID]!.command.push(inst.instanceId);
-      }
-
-      // Opening hand
-      const lib = core.zoneOrder[PLAYER_ID]!.library;
-      const drawn = lib.splice(0, 7);
-      for (const id of drawn) core.instances[id]!.zone = "hand";
-      core.zoneOrder[PLAYER_ID]!.hand = drawn;
+      const core: GameCore = {
+        players: {},
+        playerOrder: [],
+        turn: 1,
+        phase: "main1",
+        activePlayerId: PLAYER_ID,
+        instances: {},
+        zoneOrder: {},
+        log: [],
+      };
+      setupPlayer(core, deck, PLAYER_ID, "You");
+      botDecks.forEach((botDeck, i) => {
+        setupPlayer(core, botDeck, `bot${i + 1}`, botDeck.name);
+      });
 
       pushLog(core, PLAYER_ID, {
         type: "game",
-        message: `Game started with "${deck.name}" — drew opening 7.`,
+        message:
+          botDecks.length > 0
+            ? `Game started: "${deck.name}" vs ${botDecks.length} opponent${botDecks.length === 1 ? "" : "s"} (${botDecks.map((d) => d.name).join(", ")}). Everyone drew 7.`
+            : `Game started with "${deck.name}" — drew opening 7.`,
       });
       set({ ...core, started: true, history: [], future: [] });
     },
@@ -418,7 +485,7 @@ export const useGameStore = create<GameStore>((set, get) => {
           removeFromZone(core, inst);
           breakAttachments(core, inst);
           delete core.instances[instanceId];
-          pushLog(core, PLAYER_ID, {
+          pushLog(core, inst.ownerId, {
             type: "move",
             cardName: name,
             from,
@@ -449,12 +516,12 @@ export const useGameStore = create<GameStore>((set, get) => {
                   ? " (shuffled in)"
                   : " (top)"
               : "";
-          pushLog(core, PLAYER_ID, {
+          pushLog(core, inst.ownerId, {
             type: "move",
             cardName: name,
             from,
             to,
-            message: `${name}: ${from} → ${to}${placement}.`,
+            message: `${inst.ownerId === PLAYER_ID ? "" : "Opponent's "}${name}: ${from} → ${to}${placement}.`,
           });
         }
       });
@@ -519,7 +586,7 @@ export const useGameStore = create<GameStore>((set, get) => {
       mutate((core) => {
         let n = 0;
         for (const inst of Object.values(core.instances)) {
-          if (inst.ownerId === PLAYER_ID && inst.zone === "battlefield" && !inst.tapped) {
+          if (controllerOf(inst) === PLAYER_ID && inst.zone === "battlefield" && !inst.tapped) {
             inst.tapped = true;
             n++;
           }
@@ -534,7 +601,7 @@ export const useGameStore = create<GameStore>((set, get) => {
       mutate((core) => {
         let n = 0;
         for (const inst of Object.values(core.instances)) {
-          if (inst.ownerId !== PLAYER_ID || inst.zone !== "battlefield") continue;
+          if (controllerOf(inst) !== PLAYER_ID || inst.zone !== "battlefield") continue;
           for (const name of Object.keys(inst.counters)) {
             inst.counters[name] = (inst.counters[name] ?? 0) + 1;
             n++;
@@ -559,18 +626,38 @@ export const useGameStore = create<GameStore>((set, get) => {
         });
       }),
 
-    untapAll: () =>
+    tapCards: (instanceIds, reason) => {
+      const s = get();
+      mutate((core) => {
+        const names: string[] = [];
+        for (const id of instanceIds) {
+          const inst = core.instances[id];
+          if (!inst || inst.zone !== "battlefield" || inst.tapped) continue;
+          inst.tapped = true;
+          names.push(cardName({ ...core, cards: s.cards }, inst));
+        }
+        if (names.length === 0) return;
+        pushLog(core, core.instances[instanceIds[0]!]?.ownerId ?? PLAYER_ID, {
+          type: "tap",
+          cardName: names.join(", "),
+          tapped: true,
+          message: `Tapped ${names.join(", ")}${reason ? ` (${reason})` : ""}.`,
+        });
+      });
+    },
+
+    untapAll: (playerId = PLAYER_ID) =>
       mutate((core) => {
         let n = 0;
         for (const inst of Object.values(core.instances)) {
-          if (inst.ownerId === PLAYER_ID && inst.zone === "battlefield" && inst.tapped) {
+          if (controllerOf(inst) === playerId && inst.zone === "battlefield" && inst.tapped) {
             inst.tapped = false;
             n++;
           }
         }
-        pushLog(core, PLAYER_ID, {
+        pushLog(core, playerId, {
           type: "game",
-          message: `Untapped all permanents (${n}).`,
+          message: `${playerId === PLAYER_ID ? "Untapped" : "Opponent untapped"} all permanents (${n}).`,
         });
       }),
 
@@ -761,16 +848,17 @@ export const useGameStore = create<GameStore>((set, get) => {
       });
     },
 
-    draw: (n = 1) =>
+    draw: (n = 1, playerId = PLAYER_ID) =>
       mutate((core) => {
-        const zones = core.zoneOrder[PLAYER_ID]!;
+        const zones = core.zoneOrder[playerId];
+        if (!zones) return;
         const drawn = zones.library.splice(0, n);
         for (const id of drawn) core.instances[id]!.zone = "hand";
         zones.hand.push(...drawn);
-        pushLog(core, PLAYER_ID, {
+        pushLog(core, playerId, {
           type: "draw",
           count: drawn.length,
-          message: `Drew ${drawn.length} card${drawn.length === 1 ? "" : "s"}.`,
+          message: `${playerId === PLAYER_ID ? "Drew" : "Opponent drew"} ${drawn.length} card${drawn.length === 1 ? "" : "s"}.`,
         });
       }),
 
@@ -792,14 +880,15 @@ export const useGameStore = create<GameStore>((set, get) => {
       });
     },
 
-    shuffleLibrary: () =>
+    shuffleLibrary: (playerId = PLAYER_ID) =>
       mutate((core) => {
-        const zones = core.zoneOrder[PLAYER_ID]!;
+        const zones = core.zoneOrder[playerId];
+        if (!zones) return;
         zones.library = shuffled(zones.library);
-        pushLog(core, PLAYER_ID, {
+        pushLog(core, playerId, {
           type: "library",
           action: "shuffle",
-          message: "Shuffled library.",
+          message: `Shuffled ${playerId === PLAYER_ID ? "library" : "opponent's library"}.`,
         });
       }),
 
@@ -847,12 +936,12 @@ export const useGameStore = create<GameStore>((set, get) => {
       mutate((core) => {
         const inst = core.instances[instanceId];
         if (!inst) return;
-        const zones = core.zoneOrder[PLAYER_ID]!;
+        const zones = core.zoneOrder[inst.ownerId]!;
         removeFromZone(core, inst);
         inst.zone = "hand";
         zones.hand.push(instanceId);
         zones.library = shuffled(zones.library);
-        pushLog(core, PLAYER_ID, {
+        pushLog(core, inst.ownerId, {
           type: "library",
           action: "tutor",
           message: `Searched library for ${cardName({ ...core, cards: s.cards }, inst)} (to hand), then shuffled.`,
@@ -960,37 +1049,49 @@ export const useGameStore = create<GameStore>((set, get) => {
       }),
 
     nextTurn: () => {
-      const { prefs } = get();
+      get().beginPlayerTurn(PLAYER_ID, get().prefs.drawOnTurn);
+    },
+
+    beginPlayerTurn: (playerId, draw = true) => {
       mutate((core) => {
         core.turn += 1;
-        core.phase = prefs.drawOnTurn ? "main1" : "untap";
+        core.activePlayerId = playerId;
+        core.phase = "main1";
         let untapped = 0;
         for (const inst of Object.values(core.instances)) {
-          if (inst.ownerId === PLAYER_ID && inst.zone === "battlefield" && inst.tapped) {
+          if (controllerOf(inst) === playerId && inst.zone === "battlefield" && inst.tapped) {
             inst.tapped = false;
             untapped++;
           }
         }
-        pushLog(core, PLAYER_ID, {
+        const who = playerId === PLAYER_ID ? "Your" : "Opponent's";
+        pushLog(core, playerId, {
           type: "turn",
           turn: core.turn,
-          message: `Turn ${core.turn} — untapped ${untapped} permanent${untapped === 1 ? "" : "s"}.`,
+          message: `Turn ${core.turn} (${who.toLowerCase()} turn) — untapped ${untapped} permanent${untapped === 1 ? "" : "s"}.`,
         });
-        if (prefs.drawOnTurn) {
-          const zones = core.zoneOrder[PLAYER_ID]!;
-          const drawn = zones.library.splice(0, 1);
-          for (const id of drawn) core.instances[id]!.zone = "hand";
-          zones.hand.push(...drawn);
-          if (drawn.length) {
-            pushLog(core, PLAYER_ID, {
-              type: "draw",
-              count: 1,
-              message: "Drew for turn.",
-            });
+        if (draw) {
+          const zones = core.zoneOrder[playerId];
+          if (zones) {
+            const drawn = zones.library.splice(0, 1);
+            for (const id of drawn) core.instances[id]!.zone = "hand";
+            zones.hand.push(...drawn);
+            if (drawn.length) {
+              pushLog(core, playerId, {
+                type: "draw",
+                count: 1,
+                message: playerId === PLAYER_ID ? "Drew for turn." : "Opponent drew for turn.",
+              });
+            }
           }
         }
       });
     },
+
+    logBot: (message, reasoning) =>
+      mutate((core) => {
+        pushLog(core, BOT_ID, { type: "bot", message, reasoning });
+      }),
 
     nextPhase: () =>
       mutate((core) => {

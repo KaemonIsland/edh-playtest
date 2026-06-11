@@ -132,6 +132,12 @@ export interface CardInstance {
   cardId: string;
   oracleId: string;
   ownerId: string;
+  /**
+   * Set when another player controls the card (theft). Battlefield placement
+   * follows the controller; every other zone returns to the owner (a stolen
+   * creature still dies to its owner's graveyard).
+   */
+  controllerId?: string;
   zone: Zone;
   tapped: boolean;
   faceDown: boolean;
@@ -200,7 +206,9 @@ export type LogEvent =
   | { type: "token"; cardName: string; message: string }
   | { type: "turn"; turn: number; message: string }
   | { type: "phase"; phase: Phase; message: string }
-  | { type: "library"; action: string; message: string };
+  | { type: "library"; action: string; message: string }
+  /** Bot decisions + the reasoning behind them (transparency requirement). */
+  | { type: "bot"; message: string; reasoning?: string };
 
 export interface LogEntry {
   id: string;

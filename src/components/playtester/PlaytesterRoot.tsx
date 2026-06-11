@@ -12,12 +12,15 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import type { Zone } from "@/types";
-import { useGameStore } from "@/lib/game/store";
+import { controllerOf, isBotId, PLAYER_ID, useGameStore } from "@/lib/game/store";
+import { useBotStore } from "@/lib/game/botStore";
 import { useUiStore } from "@/lib/game/uiStore";
 import { loadKeybinds, type KeybindMap } from "@/lib/game/keybinds";
 import { CardImage } from "@/components/cards/CardImage";
 import { HoverPreview } from "@/components/cards/HoverPreview";
 import { Battlefield } from "./Battlefield";
+import { OpponentBoard } from "./OpponentBoard";
+import { BotPrompt } from "./BotPrompt";
 import { HandFan } from "./HandFan";
 import { ZonePiles } from "./ZonePiles";
 import { TopBar } from "./TopBar";
@@ -45,6 +48,15 @@ export function PlaytesterRoot() {
     setKeybinds(loadKeybinds());
   }, []);
 
+  // Keep a valid "current opponent" selected whenever bots exist.
+  const firstBotId = g.playerOrder.find(isBotId) ?? null;
+  const viewedOpponent = ui.viewedOpponent;
+  useEffect(() => {
+    if (firstBotId && (!viewedOpponent || !useGameStore.getState().players[viewedOpponent])) {
+      useUiStore.getState().setViewedOpponent(firstBotId);
+    }
+  }, [firstBotId, viewedOpponent]);
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 220, tolerance: 8 } }),
@@ -60,13 +72,20 @@ export function PlaytesterRoot() {
     ui.setDragging(false);
     const instanceId = String(e.active.id);
     const overId = e.over?.id ? String(e.over.id) : null;
-    if (!overId || !DROP_ZONES.includes(overId as Zone)) return;
-    const zone = overId as Zone;
+    if (!overId) return;
+    // Droppables: "<zone>" for your board, "<botId>:<zone>" for an opponent's.
+    const sep = overId.indexOf(":");
+    const targetPlayer = sep >= 0 ? overId.slice(0, sep) : PLAYER_ID;
+    const isBotTarget = sep >= 0;
+    const zone = (sep >= 0 ? overId.slice(sep + 1) : overId) as Zone;
+    if (!DROP_ZONES.includes(zone)) return;
     const inst = g.instances[instanceId];
     if (!inst) return;
 
     if (zone === "battlefield") {
-      const surface = document.getElementById("battlefield-surface");
+      const surface = document.getElementById(
+        isBotTarget ? `surface-${targetPlayer}` : "battlefield-surface",
+      );
       const w = g.prefs.cardSize;
       const h = Math.round(w * 1.4);
       const snap = (v: number) => (g.prefs.snapToGrid ? Math.round(v / GRID) * GRID : v);
@@ -79,9 +98,11 @@ export function PlaytesterRoot() {
           y: Math.max(0, Math.min(snap(translated.top - rect.top), rect.height - h)),
         };
       }
-      if (inst.zone === "battlefield") {
+      // Dropping onto another player's surface is theft: control changes.
+      const sameField = inst.zone === "battlefield" && controllerOf(inst) === targetPlayer;
+      if (sameField) {
         const selection = useUiStore.getState().selected;
-        if (surface && selection.length > 1 && selection.includes(instanceId)) {
+        if (!isBotTarget && surface && selection.length > 1 && selection.includes(instanceId)) {
           // Group move: shift every selected card by the drag delta.
           const rect = surface.getBoundingClientRect();
           const updates: Record<string, { x: number; y: number }> = {};
@@ -98,7 +119,7 @@ export function PlaytesterRoot() {
           g.setPosition(instanceId, position);
         }
       } else {
-        g.moveCard(instanceId, "battlefield", { position });
+        g.moveCard(instanceId, "battlefield", { position, controllerId: targetPlayer });
       }
       return;
     }
@@ -126,14 +147,19 @@ export function PlaytesterRoot() {
 
       if (key === keybinds.draw) fire(() => game.draw(1));
       else if (key === keybinds.untapAll) fire(() => game.untapAll());
-      else if (key === keybinds.nextTurn) fire(() => game.nextTurn());
+      else if (key === keybinds.nextTurn)
+        fire(() => {
+          if (game.activePlayerId !== PLAYER_ID) return; // a bot is mid-turn
+          if (game.playerOrder.some(isBotId)) useBotStore.getState().passTurn();
+          else game.nextTurn();
+        });
       else if (key === keybinds.nextPhase) fire(() => game.nextPhase());
       else if (key === keybinds.undo) fire(() => game.undo());
       else if (key === keybinds.redo) fire(() => game.redo());
       else if (key === keybinds.shuffle) fire(() => game.shuffleLibrary());
       else if (key === keybinds.searchLibrary)
         fire(() =>
-          ui.openModal({ kind: "browse", zone: "library", title: "Library", shuffleAfter: true }),
+          ui.openModal({ kind: "browse", zone: "library", title: "Library", shuffleAfter: true, playerId: PLAYER_ID }),
         );
       else if (key === keybinds.scry) fire(() => ui.openModal({ kind: "scry", count: 1, surveil: false }));
       else if (key === keybinds.mill) fire(() => game.mill(1));
@@ -158,11 +184,24 @@ export function PlaytesterRoot() {
         <TopBar />
 
         <main className="relative flex min-h-0 flex-1 gap-2 p-2">
-          <div className="relative min-w-0 flex-1 pb-32">
-            <Battlefield />
+          {firstBotId && g.prefs.layoutMode === "side-left" && (
+            <div className="flex h-full w-[36%] min-w-[300px] flex-col">
+              <OpponentBoard side />
+            </div>
+          )}
+          <div className="relative flex min-w-0 flex-1 flex-col pb-32">
+            {firstBotId && g.prefs.layoutMode === "stacked" && <OpponentBoard />}
+            <div className="relative min-h-0 flex-1">
+              <Battlefield />
+            </div>
             <ActionLog />
             <HandFan />
           </div>
+          {firstBotId && g.prefs.layoutMode === "side-right" && (
+            <div className="flex h-full w-[36%] min-w-[300px] flex-col">
+              <OpponentBoard side />
+            </div>
+          )}
           <ZonePiles />
         </main>
 
@@ -174,6 +213,7 @@ export function PlaytesterRoot() {
 
       <HoverPreview />
       <ContextMenu />
+      <BotPrompt />
 
       <DragOverlay dropAnimation={null}>
         {dragInst && (
@@ -191,6 +231,7 @@ export function PlaytesterRoot() {
       {ui.modal.kind === "browse" && (
         <LibraryBrowser
           zone={ui.modal.zone}
+          playerId={ui.modal.playerId}
           title={ui.modal.title}
           shuffleAfter={ui.modal.shuffleAfter}
         />

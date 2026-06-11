@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useGameStore } from "@/lib/game/store";
-import { loadCurrentDeck } from "@/lib/deck/storage";
+import { loadBotDecksFromStorage, loadCurrentDeck } from "@/lib/deck/storage";
 import { PlaytesterRoot } from "@/components/playtester/PlaytesterRoot";
 
 export default function PlayPage() {
@@ -18,6 +18,8 @@ export default function PlayPage() {
     if (!state.deck) {
       const saved = loadCurrentDeck();
       if (saved) loadDeck(saved);
+      const savedBots = loadBotDecksFromStorage();
+      if (savedBots.length > 0) useGameStore.getState().loadBotDecks(savedBots);
     }
     if (useGameStore.getState().deck && !useGameStore.getState().started) {
       startGame();

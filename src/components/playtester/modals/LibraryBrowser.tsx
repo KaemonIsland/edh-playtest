@@ -8,17 +8,19 @@ import { CardImage } from "@/components/cards/CardImage";
 import { Modal } from "./Modal";
 
 /**
- * Browse/search any pile (library, graveyard, exile). For the library this is
- * the tutor flow: taking a card to hand shuffles afterwards.
+ * Browse/search any pile (library, graveyard, exile) for any player. For the
+ * library this is the tutor flow: taking a card to hand shuffles afterwards.
  */
 export function LibraryBrowser({
   zone,
   title,
   shuffleAfter,
+  playerId = PLAYER_ID,
 }: {
   zone: Zone;
   title: string;
   shuffleAfter: boolean;
+  playerId?: string;
 }) {
   const g = useGameStore();
   const closeModal = useUiStore((s) => s.closeModal);
@@ -26,7 +28,7 @@ export function LibraryBrowser({
   const [query, setQuery] = useState("");
   const [tookCard, setTookCard] = useState(false);
 
-  const ids = g.zoneOrder[PLAYER_ID]?.[zone] ?? [];
+  const ids = g.zoneOrder[playerId]?.[zone] ?? [];
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return ids;
@@ -41,7 +43,7 @@ export function LibraryBrowser({
   }, [ids, query, g.instances, g.cards]);
 
   const done = () => {
-    if (shuffleAfter && (tookCard || zone === "library")) g.shuffleLibrary();
+    if (shuffleAfter && (tookCard || zone === "library")) g.shuffleLibrary(playerId);
     closeModal();
   };
 

@@ -43,9 +43,38 @@ export function SettingsPanel() {
     { label: "X-Large", value: 145 },
   ];
 
+  const LAYOUTS = [
+    { label: "Stacked (top)", value: "stacked" as const },
+    { label: "Side — left", value: "side-left" as const },
+    { label: "Side — right", value: "side-right" as const },
+  ];
+
   return (
     <Modal title="Settings">
       <div className="flex flex-col gap-2">
+        <div className="rounded-md bg-stone-900 px-3 py-2.5">
+          <div className="text-xs font-semibold text-stone-200">Opponent board layout</div>
+          <div className="mb-2 text-[10px] text-stone-500">
+            Stacked mirrors the opponent above your field; side-by-side suits ultra-wide
+            monitors (place them left or right).
+          </div>
+          <div className="flex items-center gap-2">
+            {LAYOUTS.map((l) => (
+              <button
+                key={l.value}
+                onClick={() => setPref("layoutMode", l.value)}
+                className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition ${
+                  prefs.layoutMode === l.value
+                    ? "bg-emerald-700 text-white"
+                    : "bg-stone-800 text-stone-400 hover:bg-stone-700"
+                }`}
+              >
+                {l.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="rounded-md bg-stone-900 px-3 py-2.5">
           <div className="text-xs font-semibold text-stone-200">Card size</div>
           <div className="mb-2 text-[10px] text-stone-500">

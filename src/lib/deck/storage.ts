@@ -21,3 +21,24 @@ export function loadCurrentDeck(): Deck | null {
     return null;
   }
 }
+
+const BOT_KEY = "edh-playtest:bot-decks";
+
+export function saveBotDecks(decks: Deck[]): void {
+  try {
+    if (decks.length > 0) window.localStorage.setItem(BOT_KEY, JSON.stringify(decks));
+    else window.localStorage.removeItem(BOT_KEY);
+  } catch {
+    // quota exceeded — non-fatal
+  }
+}
+
+export function loadBotDecksFromStorage(): Deck[] {
+  try {
+    const raw = window.localStorage.getItem(BOT_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Deck | Deck[]) : [];
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    return [];
+  }
+}

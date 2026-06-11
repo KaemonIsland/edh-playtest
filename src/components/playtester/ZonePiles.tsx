@@ -49,7 +49,7 @@ function ZonePile({
         {
           label: "Search / browse library",
           onClick: () =>
-            openModal({ kind: "browse", zone: "library", title: "Library", shuffleAfter: true }),
+            openModal({ kind: "browse", zone: "library", title: "Library", shuffleAfter: true, playerId: PLAYER_ID }),
         },
         {
           label: "Scry N…",
@@ -79,7 +79,7 @@ function ZonePile({
     return [
       {
         label: `Browse ${label.toLowerCase()}`,
-        onClick: () => openModal({ kind: "browse", zone, title: label, shuffleAfter: false }),
+        onClick: () => openModal({ kind: "browse", zone, title: label, shuffleAfter: false, playerId: PLAYER_ID }),
       },
     ];
   };
@@ -109,6 +109,7 @@ function ZonePile({
             zone,
             title: label,
             shuffleAfter: zone === "library",
+            playerId: PLAYER_ID,
           })
         }
         onContextMenu={(e) => {

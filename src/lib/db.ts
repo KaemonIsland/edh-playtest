@@ -21,14 +21,31 @@ export function normalizeCardName(name: string): string {
     .trim();
 }
 
+/** Cached EDHREC average-deck list (best-effort community data). */
+export interface CachedEdhrecDeck {
+  slug: string;
+  commanderName: string;
+  lines: string[];
+  fetchedAt: number;
+}
+
+export const EDHREC_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
 const db = new Dexie("edh-playtest") as Dexie & {
   cards: EntityTable<CachedCard, "key">;
   snapshots: EntityTable<GameSnapshot, "id">;
+  edhrecDecks: EntityTable<CachedEdhrecDeck, "slug">;
 };
 
 db.version(1).stores({
   cards: "key, card.id, fetchedAt",
   snapshots: "++id, savedAt, deckName",
+});
+
+db.version(2).stores({
+  cards: "key, card.id, fetchedAt",
+  snapshots: "++id, savedAt, deckName",
+  edhrecDecks: "slug, fetchedAt",
 });
 
 export { db };

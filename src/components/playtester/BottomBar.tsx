@@ -1,7 +1,8 @@
 "use client";
 
 import type { ManaColor } from "@/types";
-import { PLAYER_ID, useGameStore } from "@/lib/game/store";
+import { isBotId, PLAYER_ID, useGameStore } from "@/lib/game/store";
+import { useBotStore } from "@/lib/game/botStore";
 import { useUiStore } from "@/lib/game/uiStore";
 
 const MANA_STYLE: Record<ManaColor, string> = {
@@ -60,9 +61,13 @@ function Tracker({
 
 export function BottomBar() {
   const g = useGameStore();
+  const passTurn = useBotStore((s) => s.passTurn);
   const openModal = useUiStore((s) => s.openModal);
   const player = g.players[PLAYER_ID];
   if (!player) return null;
+
+  const hasBot = g.playerOrder.some(isBotId);
+  const botActive = g.activePlayerId !== PLAYER_ID;
 
   return (
     <footer className="z-30 flex h-14 items-center gap-2 overflow-x-auto border-t border-stone-800 bg-stone-950 px-3">
@@ -131,11 +136,18 @@ export function BottomBar() {
           ⚙ Settings
         </button>
         <button
-          onClick={() => g.nextTurn()}
-          className="rounded-md bg-emerald-700 px-4 py-1.5 text-xs font-bold text-white shadow hover:bg-emerald-600"
-          title="Untap all + draw for turn (n)"
+          onClick={() => (hasBot ? passTurn() : g.nextTurn())}
+          disabled={botActive}
+          className="rounded-md bg-emerald-700 px-4 py-1.5 text-xs font-bold text-white shadow hover:bg-emerald-600 disabled:opacity-40"
+          title={
+            botActive
+              ? "Opponent is taking their turn — control it from the top board"
+              : hasBot
+                ? "Pass the turn to the opponent (n)"
+                : "Untap all + draw for turn (n)"
+          }
         >
-          Next turn ▸
+          {botActive ? "Opponent's turn…" : hasBot ? "Pass turn ▸" : "Next turn ▸"}
         </button>
       </div>
     </footer>

@@ -24,7 +24,7 @@ export interface MenuItem {
 
 export type ModalKind =
   | { kind: "none" }
-  | { kind: "browse"; zone: Zone; title: string; shuffleAfter: boolean }
+  | { kind: "browse"; zone: Zone; title: string; shuffleAfter: boolean; playerId: string }
   | { kind: "scry"; count: number; surveil: boolean }
   | { kind: "token" }
   | { kind: "dice" }
@@ -53,6 +53,10 @@ interface UiStore {
   attachSource: string | null;
   /** Marquee-selected battlefield cards. */
   selected: string[];
+  /** Which opponent's board is shown ("current opponent"). */
+  viewedOpponent: string | null;
+  /** Collapse the opponent board down to its summary strip. */
+  opponentCollapsed: boolean;
 
   openModal: (modal: ModalKind) => void;
   closeModal: () => void;
@@ -69,6 +73,8 @@ interface UiStore {
   setAttachSource: (instanceId: string | null) => void;
   setSelected: (ids: string[]) => void;
   clearSelected: () => void;
+  setViewedOpponent: (playerId: string | null) => void;
+  setOpponentCollapsed: (collapsed: boolean) => void;
 }
 
 export const useUiStore = create<UiStore>((set, get) => ({
@@ -82,6 +88,8 @@ export const useUiStore = create<UiStore>((set, get) => ({
   lastDragEndAt: 0,
   attachSource: null,
   selected: [],
+  viewedOpponent: null,
+  opponentCollapsed: false,
 
   openModal: (modal) => set({ modal, menu: null }),
   closeModal: () => set({ modal: { kind: "none" } }),
@@ -108,6 +116,8 @@ export const useUiStore = create<UiStore>((set, get) => ({
   setAttachSource: (instanceId) => set({ attachSource: instanceId }),
   setSelected: (ids) => set({ selected: ids }),
   clearSelected: () => set({ selected: [] }),
+  setViewedOpponent: (viewedOpponent) => set({ viewedOpponent }),
+  setOpponentCollapsed: (opponentCollapsed) => set({ opponentCollapsed }),
 }));
 
 /** True right after a drop, so click handlers can ignore the trailing click. */

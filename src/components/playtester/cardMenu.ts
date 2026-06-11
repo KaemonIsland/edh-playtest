@@ -1,6 +1,6 @@
 "use client";
 
-import { PLAYER_ID, useGameStore } from "@/lib/game/store";
+import { controllerOf, PLAYER_ID, useGameStore } from "@/lib/game/store";
 import { useUiStore, type MenuItem } from "@/lib/game/uiStore";
 import type { Zone } from "@/types";
 
@@ -95,6 +95,29 @@ function moveToSubmenu(instanceId: string, currentZone: Zone, isCommander: boole
     move("library", "Bottom of library", { libraryPlacement: "bottom" }),
     move("library", "Shuffle into library", { libraryPlacement: "shuffle" }),
   );
+
+  // Card theft: hand control of the card to another player's battlefield.
+  // It still belongs to its owner — leaving the battlefield sends it back to
+  // the owner's zones.
+  const inst = g.instances[instanceId];
+  if (inst) {
+    const currentController =
+      currentZone === "battlefield" ? controllerOf(inst) : inst.ownerId;
+    const theftTargets = g.playerOrder.filter((pid) => pid !== currentController);
+    if (theftTargets.length > 0 && g.playerOrder.length > 1) {
+      items.push({ label: "", separator: true });
+      for (const pid of theftTargets) {
+        const label =
+          pid === PLAYER_ID
+            ? "Your battlefield (take control)"
+            : `${g.players[pid]?.name ?? "Opponent"}'s battlefield`;
+        items.push({
+          label,
+          onClick: () => g.moveCard(instanceId, "battlefield", { controllerId: pid }),
+        });
+      }
+    }
+  }
   return items;
 }
 
@@ -128,7 +151,8 @@ export function buildCardMenu(instanceId: string): MenuItem[] {
   const g = useGameStore.getState();
   const inst = g.instances[instanceId];
   if (!inst) return [];
-  const isCommander = g.players[PLAYER_ID]?.commanderOracleIds.includes(inst.oracleId) ?? false;
+  const isCommander =
+    g.players[inst.ownerId]?.commanderOracleIds.includes(inst.oracleId) ?? false;
 
   const items: MenuItem[] = [];
 
@@ -173,7 +197,7 @@ export function buildCardMenu(instanceId: string): MenuItem[] {
       { label: "Move to", icon: "→", children: moveToSubmenu(instanceId, "hand", isCommander) },
     );
   } else if (inst.zone === "command") {
-    const tax = (g.players[PLAYER_ID]?.commanderTax[inst.oracleId] ?? 0) * 2;
+    const tax = (g.players[inst.ownerId]?.commanderTax[inst.oracleId] ?? 0) * 2;
     items.push(
       {
         label: `Cast commander${tax > 0 ? ` (+${tax} tax)` : ""}`,

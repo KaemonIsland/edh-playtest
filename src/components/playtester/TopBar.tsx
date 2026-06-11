@@ -2,7 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { PHASES, type Phase } from "@/types";
-import { PLAYER_ID, useGameStore } from "@/lib/game/store";
+import { isBotId, PLAYER_ID, useGameStore } from "@/lib/game/store";
+import { useBotStore } from "@/lib/game/botStore";
 import { useUiStore, type MenuItem } from "@/lib/game/uiStore";
 
 const PHASE_LABEL: Record<Phase, string> = {
@@ -21,13 +22,20 @@ export function TopBar() {
   const openMenu = useUiStore((s) => s.openMenu);
   const openModal = useUiStore((s) => s.openModal);
   const startBottoming = useUiStore((s) => s.startBottoming);
+  const viewedOpponent = useUiStore((s) => s.viewedOpponent);
+  const setViewedOpponent = useUiStore((s) => s.setViewedOpponent);
+  const setOpponentCollapsed = useUiStore((s) => s.setOpponentCollapsed);
 
   const mulligans = g.players[PLAYER_ID]?.mulligans ?? 0;
+  const botIds = g.playerOrder.filter(isBotId);
 
   const actionsMenu = (): MenuItem[] => [
     {
       label: "Restart game (reshuffle & redraw)",
-      onClick: () => g.startGame(),
+      onClick: () => {
+        useBotStore.getState().reset();
+        g.startGame();
+      },
     },
     { label: `Mulligan (draw new 7)${mulligans ? ` — taken ${mulligans}` : ""}`, onClick: () => g.mulligan() },
     {
@@ -58,9 +66,52 @@ export function TopBar() {
         Keybinds
       </button>
 
-      <div className="ml-2 truncate text-sm font-medium text-stone-400">
+      <div className="ml-2 max-w-44 truncate text-sm font-medium text-stone-400">
         {g.deck?.name ?? "Untitled deck"}
       </div>
+
+      {/* Players: you + opponent tabs. Green dot = whose turn it is;
+          clicking an opponent shows their board ("current opponent"). */}
+      {botIds.length > 0 && (
+        <div className="ml-2 flex items-center gap-1 overflow-x-auto">
+          <span
+            className={`flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+              g.activePlayerId === PLAYER_ID
+                ? "bg-emerald-900/60 text-emerald-200 ring-1 ring-emerald-600"
+                : "bg-stone-900 text-stone-400"
+            }`}
+          >
+            {g.activePlayerId === PLAYER_ID && (
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            )}
+            You
+          </span>
+          {botIds.map((id) => {
+            const isTurn = g.activePlayerId === id;
+            const isViewed = viewedOpponent === id;
+            return (
+              <button
+                key={id}
+                onClick={() => {
+                  setViewedOpponent(id);
+                  setOpponentCollapsed(false);
+                }}
+                title={`Show ${g.players[id]?.name}'s board`}
+                className={`flex max-w-36 shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
+                  isTurn
+                    ? "bg-rose-900/70 text-rose-200 ring-1 ring-rose-500"
+                    : isViewed
+                      ? "bg-stone-800 text-stone-200 ring-1 ring-stone-500"
+                      : "bg-stone-900 text-stone-500 hover:text-stone-300"
+                }`}
+              >
+                {isTurn && <span className="h-1.5 w-1.5 rounded-full bg-rose-400" />}
+                <span className="truncate">🤖 {g.players[id]?.name ?? id}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div className="ml-auto flex items-center gap-2">
         {g.prefs.showPhaseStepper && (

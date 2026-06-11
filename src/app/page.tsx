@@ -6,7 +6,10 @@ import type { Deck, ParsedDeckLine, ScryCard } from "@/types";
 import { parseDecklist } from "@/lib/deck/parse";
 import { validateCommanderDeck } from "@/lib/deck/validate";
 import { resolveCards, resolveOne, type ResolveProgress } from "@/lib/scryfall/resolve";
-import { saveCurrentDeck } from "@/lib/deck/storage";
+import { saveBotDecks, saveCurrentDeck } from "@/lib/deck/storage";
+import { buildDeckFromText } from "@/lib/deck/build";
+import { fetchAverageDeck } from "@/lib/bot/edhrec";
+import { FALLBACK_DECKS } from "@/lib/bot/fallbackDecks";
 import { useGameStore } from "@/lib/game/store";
 import { uid } from "@/lib/game/ids";
 import { CardImage } from "@/components/cards/CardImage";
@@ -46,6 +49,61 @@ export default function ImportPage() {
   const [parseWarnings, setParseWarnings] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+
+  // Opponents (up to 3): each slot is a pasted list or an EDHREC average deck.
+  interface OppSlot {
+    mode: "paste" | "edhrec";
+    text: string;
+    name: string;
+    commander: string;
+    status: string | null;
+    fetching: boolean;
+  }
+  const [oppSlots, setOppSlots] = useState<OppSlot[]>([]);
+  const [starting, setStarting] = useState(false);
+
+  const patchSlot = (i: number, patch: Partial<OppSlot>) =>
+    setOppSlots((prev) => prev.map((s, j) => (j === i ? { ...s, ...patch } : s)));
+
+  const addOpponent = () =>
+    setOppSlots((prev) =>
+      prev.length >= 3
+        ? prev
+        : [...prev, { mode: "edhrec", text: "", name: "", commander: "", status: null, fetching: false }],
+    );
+
+  const fetchEdhrec = async (i: number) => {
+    const slot = oppSlots[i];
+    if (!slot?.commander.trim()) return;
+    patchSlot(i, { fetching: true, status: "Fetching average deck from EDHREC…" });
+    try {
+      const result = await fetchAverageDeck(slot.commander.trim());
+      if (result) {
+        patchSlot(i, {
+          text: `1 ${result.commanderName} *CMDR*\n${result.lines.join("\n")}`,
+          name: `${result.commanderName} (EDHREC avg)`,
+          status: `✓ ${result.lines.length} entries from EDHREC${result.fromCache ? " (cached)" : ""} — community data, best-effort.`,
+        });
+      } else {
+        patchSlot(i, {
+          status:
+            "EDHREC fetch failed or no average deck exists for that commander — pick a bundled deck below or paste a list.",
+        });
+      }
+    } finally {
+      patchSlot(i, { fetching: false });
+    }
+  };
+
+  const useFallback = (i: number, fbIndex: number) => {
+    const fb = FALLBACK_DECKS[fbIndex];
+    if (!fb) return;
+    patchSlot(i, {
+      text: fb.list,
+      name: fb.name,
+      status: `✓ Using bundled deck: ${fb.name} (${fb.commander}).`,
+    });
+  };
 
   const doImport = async () => {
     setError(null);
@@ -122,10 +180,34 @@ export default function ImportPage() {
   const cardCount = entries.reduce((n, e) => n + (e.isCommander ? 0 : e.line.quantity), 0);
   const commanders = entries.filter((e) => e.isCommander);
 
-  const start = () => {
-    saveCurrentDeck(deck);
-    loadDeck(deck);
-    router.push("/play");
+  const start = async () => {
+    setStarting(true);
+    try {
+      const botDecks: Deck[] = [];
+      for (let i = 0; i < oppSlots.length; i++) {
+        const slot = oppSlots[i]!;
+        if (!slot.text.trim()) continue;
+        patchSlot(i, { status: "Resolving opponent deck via Scryfall…" });
+        const built = await buildDeckFromText(
+          slot.text,
+          slot.name.trim() || `Opponent ${botDecks.length + 1}`,
+        );
+        botDecks.push(built.deck);
+        if (built.notFound.length > 0) {
+          patchSlot(i, {
+            status: `Ready (${built.notFound.length} unresolved name${built.notFound.length === 1 ? "" : "s"} skipped).`,
+          });
+        }
+      }
+      saveCurrentDeck(deck);
+      saveBotDecks(botDecks);
+      loadDeck(deck);
+      useGameStore.getState().loadBotDecks(botDecks);
+      router.push("/play");
+    } catch (e) {
+      setStarting(false);
+      setError(e instanceof Error ? e.message : "Failed to start the game.");
+    }
   };
 
   return (
@@ -300,6 +382,113 @@ export default function ImportPage() {
               </div>
             </div>
 
+            <div className="rounded-lg border border-rose-900/40 bg-stone-950 p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-bold tracking-wide text-rose-300/90 uppercase">
+                  🤖 Opponents (optional, up to 3)
+                </span>
+                <button
+                  onClick={addOpponent}
+                  disabled={oppSlots.length >= 3}
+                  className="rounded-md bg-rose-900/60 px-3 py-1 text-[11px] font-bold text-rose-100 hover:bg-rose-800/70 disabled:opacity-40"
+                >
+                  + Add opponent
+                </button>
+              </div>
+
+              {oppSlots.length === 0 && (
+                <p className="text-[11px] text-stone-600">
+                  No opponents — solo goldfishing. Add up to three for a full pod.
+                </p>
+              )}
+
+              {oppSlots.map((slot, i) => (
+                <div key={i} className="mb-2 rounded-md border border-stone-800 bg-stone-900/40 p-2">
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="text-[11px] font-bold text-stone-400">Opponent {i + 1}</span>
+                    <div className="flex gap-1 rounded-lg bg-stone-900 p-0.5">
+                      {(
+                        [
+                          ["edhrec", "EDHREC average"],
+                          ["paste", "Paste decklist"],
+                        ] as const
+                      ).map(([mode, label]) => (
+                        <button
+                          key={mode}
+                          onClick={() => patchSlot(i, { mode })}
+                          className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition ${
+                            slot.mode === mode
+                              ? "bg-stone-700 text-white"
+                              : "text-stone-400 hover:text-stone-200"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    {slot.text && <span className="text-[10px] text-emerald-400">✓ deck loaded</span>}
+                    <button
+                      onClick={() => setOppSlots((prev) => prev.filter((_, j) => j !== i))}
+                      className="ml-auto rounded px-1.5 text-stone-500 hover:bg-stone-800 hover:text-rose-400"
+                      title="Remove this opponent"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  {slot.mode === "edhrec" ? (
+                    <div className="mb-2 flex gap-2">
+                      <input
+                        value={slot.commander}
+                        onChange={(e) => patchSlot(i, { commander: e.target.value })}
+                        onKeyDown={(e) => e.key === "Enter" && void fetchEdhrec(i)}
+                        placeholder="Commander name, e.g. Atraxa, Praetors' Voice"
+                        className="w-full rounded-md border border-stone-700 bg-stone-900 px-3 py-1.5 text-xs outline-none focus:border-emerald-600"
+                      />
+                      <button
+                        onClick={() => void fetchEdhrec(i)}
+                        disabled={slot.fetching || !slot.commander.trim()}
+                        className="shrink-0 rounded-md bg-stone-800 px-3 py-1.5 text-xs font-semibold hover:bg-stone-700 disabled:opacity-40"
+                      >
+                        {slot.fetching ? "Fetching…" : "Fetch"}
+                      </button>
+                    </div>
+                  ) : (
+                    <textarea
+                      value={slot.text}
+                      onChange={(e) => patchSlot(i, { text: e.target.value, status: null })}
+                      placeholder="Paste this opponent's decklist…"
+                      rows={4}
+                      className="mb-2 w-full rounded-md border border-stone-700 bg-stone-900 p-2 font-mono text-xs outline-none focus:border-emerald-600"
+                    />
+                  )}
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[10px] text-stone-500">Bundled (works offline):</span>
+                    {FALLBACK_DECKS.map((fb, fbIndex) => (
+                      <button
+                        key={fb.name}
+                        onClick={() => useFallback(i, fbIndex)}
+                        className="rounded-md bg-stone-800 px-2.5 py-1 text-[11px] font-semibold text-stone-300 hover:bg-stone-700"
+                      >
+                        {fb.commander}
+                      </button>
+                    ))}
+                  </div>
+                  {slot.status && <p className="mt-1.5 text-[11px] text-stone-400">{slot.status}</p>}
+                </div>
+              ))}
+
+              {oppSlots.length > 0 && (
+                <p className="mt-1 text-[10px] leading-snug text-stone-600">
+                  Bots are deliberately simple: each plays a land, casts the most expensive thing
+                  it can afford (counting only its untapped lands), and attacks with everything
+                  able. You resolve all triggers, targets, and blocks. Turns rotate you →
+                  opponents in order.
+                </p>
+              )}
+            </div>
+
             {(warnings.length > 0 || parseWarnings.length > 0) && (
               <div className="max-h-40 overflow-y-auto rounded-lg border border-amber-900/50 bg-amber-950/10 p-3">
                 {parseWarnings.concat(warnings.map((w) => w.message)).map((w, i) => (
@@ -312,11 +501,17 @@ export default function ImportPage() {
 
             <div className="flex items-center gap-3">
               <button
-                onClick={start}
-                disabled={entries.length === 0}
+                onClick={() => void start()}
+                disabled={entries.length === 0 || starting}
                 className="rounded-md bg-emerald-700 px-6 py-2.5 text-sm font-bold text-white hover:bg-emerald-600 disabled:opacity-40"
               >
-                Start playtest →
+                {starting
+                  ? "Preparing game…"
+                  : oppSlots.some((s) => s.text.trim())
+                    ? `Start vs ${oppSlots.filter((s) => s.text.trim()).length} opponent${
+                        oppSlots.filter((s) => s.text.trim()).length === 1 ? "" : "s"
+                      } →`
+                    : "Start playtest →"}
               </button>
               <button
                 onClick={() => setStage("input")}
