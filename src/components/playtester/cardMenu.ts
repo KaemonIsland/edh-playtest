@@ -218,40 +218,68 @@ export function buildCardMenu(instanceId: string): MenuItem[] {
   return items.filter((i) => i.separator || i.label);
 }
 
-/** Right-click menu for empty battlefield space (Archidekt-style). */
-export function buildBattlefieldMenu(): MenuItem[] {
+/**
+ * Right-click menu for empty battlefield space (Archidekt-style). All actions
+ * apply to `playerId`'s field; "Next turn" and selection are yours-only.
+ */
+export function buildBattlefieldMenu(playerId: string = PLAYER_ID): MenuItem[] {
   const g = useGameStore.getState();
   const ui = useUiStore.getState();
-  const battlefieldIds = (g.zoneOrder[PLAYER_ID]?.battlefield ?? []).filter(
+  const mine = playerId === PLAYER_ID;
+  const battlefieldIds = (g.zoneOrder[playerId]?.battlefield ?? []).filter(
     (id) => !g.instances[id]?.attachedTo,
   );
 
-  return [
-    { label: "Tap all", icon: "⤵", onClick: () => g.tapAll() },
-    { label: "Untap all", icon: "⤴", hint: "U", onClick: () => g.untapAll() },
+  const items: MenuItem[] = [
+    { label: "Tap all", icon: "⤵", onClick: () => g.tapAll(playerId) },
+    {
+      label: "Untap all",
+      icon: "⤴",
+      hint: mine ? "U" : undefined,
+      onClick: () => g.untapAll(playerId),
+    },
     { label: "", separator: true },
-    { label: "Next turn (untap + draw)", icon: "▸", hint: "N", onClick: () => g.nextTurn() },
-    { label: "Proliferate all counters", icon: "✚", onClick: () => g.proliferate() },
+  ];
+
+  if (mine) {
+    items.push({
+      label: "Next turn (untap + draw)",
+      icon: "▸",
+      hint: "N",
+      onClick: () => g.nextTurn(),
+    });
+  }
+
+  items.push(
+    { label: "Proliferate all counters", icon: "✚", onClick: () => g.proliferate(playerId) },
     { label: "", separator: true },
     {
       label: "Add token / search Scryfall",
       icon: "⧉",
-      hint: "T",
-      onClick: () => ui.openModal({ kind: "token" }),
+      hint: mine ? "T" : undefined,
+      onClick: () => ui.openModal({ kind: "token", playerId }),
     },
-    { label: "", separator: true },
-    {
-      label: `Select all (${battlefieldIds.length})`,
-      icon: "▭",
-      disabled: battlefieldIds.length === 0,
-      onClick: () => ui.setSelected(battlefieldIds),
-    },
-    {
-      label: "Clear selection",
-      icon: "✕",
-      disabled: ui.selected.length === 0,
-      onClick: () => ui.clearSelected(),
-    },
+  );
+
+  if (mine) {
+    items.push(
+      { label: "", separator: true },
+      {
+        label: `Select all (${battlefieldIds.length})`,
+        icon: "▭",
+        disabled: battlefieldIds.length === 0,
+        onClick: () => ui.setSelected(battlefieldIds),
+      },
+      {
+        label: "Clear selection",
+        icon: "✕",
+        disabled: ui.selected.length === 0,
+        onClick: () => ui.clearSelected(),
+      },
+    );
+  }
+
+  items.push(
     { label: "", separator: true },
     {
       label: "Undo action",
@@ -260,5 +288,7 @@ export function buildBattlefieldMenu(): MenuItem[] {
       disabled: g.history.length === 0,
       onClick: () => g.undo(),
     },
-  ];
+  );
+
+  return items;
 }

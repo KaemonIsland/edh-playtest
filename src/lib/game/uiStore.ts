@@ -26,11 +26,12 @@ export type ModalKind =
   | { kind: "none" }
   | { kind: "browse"; zone: Zone; title: string; shuffleAfter: boolean; playerId: string }
   | { kind: "scry"; count: number; surveil: boolean }
-  | { kind: "token" }
+  | { kind: "token"; playerId: string }
   | { kind: "dice" }
   | { kind: "keybinds" }
   | { kind: "snapshots" }
-  | { kind: "settings" };
+  | { kind: "settings" }
+  | { kind: "loggame" };
 
 interface PreviewCard {
   card?: ScryCard;

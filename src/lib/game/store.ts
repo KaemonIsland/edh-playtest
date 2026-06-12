@@ -113,13 +113,13 @@ export interface GameStore extends GameCore {
   setFaceDown: (instanceId: string, faceDown: boolean) => void;
   flipFace: (instanceId: string) => void;
   addCounterOnCard: (instanceId: string, name: string, delta: number) => void;
-  tapAll: () => void;
-  /** Add one of every counter already on your permanents (and your poison/energy/experience). */
-  proliferate: () => void;
+  tapAll: (playerId?: string) => void;
+  /** Add one of every counter already on a player's permanents (and their poison/energy/experience). */
+  proliferate: (playerId?: string) => void;
   attach: (instanceId: string, hostId: string) => void;
   unattach: (instanceId: string) => void;
-  createToken: (spec: TokenSpec, count?: number) => void;
-  createTokenFromCard: (card: ScryCard, count?: number) => void;
+  createToken: (spec: TokenSpec, count?: number, playerId?: string) => void;
+  createTokenFromCard: (card: ScryCard, count?: number, playerId?: string) => void;
   cloneInstance: (instanceId: string) => void;
   removeInstance: (instanceId: string) => void;
 
@@ -582,32 +582,32 @@ export const useGameStore = create<GameStore>((set, get) => {
       });
     },
 
-    tapAll: () =>
+    tapAll: (playerId = PLAYER_ID) =>
       mutate((core) => {
         let n = 0;
         for (const inst of Object.values(core.instances)) {
-          if (controllerOf(inst) === PLAYER_ID && inst.zone === "battlefield" && !inst.tapped) {
+          if (controllerOf(inst) === playerId && inst.zone === "battlefield" && !inst.tapped) {
             inst.tapped = true;
             n++;
           }
         }
-        pushLog(core, PLAYER_ID, {
+        pushLog(core, playerId, {
           type: "game",
-          message: `Tapped all permanents (${n}).`,
+          message: `${playerId === PLAYER_ID ? "Tapped" : "Opponent tapped"} all permanents (${n}).`,
         });
       }),
 
-    proliferate: () =>
+    proliferate: (playerId = PLAYER_ID) =>
       mutate((core) => {
         let n = 0;
         for (const inst of Object.values(core.instances)) {
-          if (controllerOf(inst) !== PLAYER_ID || inst.zone !== "battlefield") continue;
+          if (controllerOf(inst) !== playerId || inst.zone !== "battlefield") continue;
           for (const name of Object.keys(inst.counters)) {
             inst.counters[name] = (inst.counters[name] ?? 0) + 1;
             n++;
           }
         }
-        const p = core.players[PLAYER_ID];
+        const p = core.players[playerId];
         if (p) {
           for (const tracker of ["poison", "energy", "experience"] as const) {
             if (p[tracker] > 0) {
@@ -620,9 +620,9 @@ export const useGameStore = create<GameStore>((set, get) => {
             n++;
           }
         }
-        pushLog(core, PLAYER_ID, {
+        pushLog(core, playerId, {
           type: "game",
-          message: `Proliferated — incremented ${n} counter${n === 1 ? "" : "s"}.`,
+          message: `Proliferated ${playerId === PLAYER_ID ? "your" : "opponent's"} counters — incremented ${n}.`,
         });
       }),
 
@@ -749,14 +749,15 @@ export const useGameStore = create<GameStore>((set, get) => {
       });
     },
 
-    createToken: (spec, count = 1) =>
+    createToken: (spec, count = 1, playerId = PLAYER_ID) =>
       mutate((core) => {
+        if (!core.zoneOrder[playerId]) return;
         for (let i = 0; i < count; i++) {
           const inst: CardInstance = {
             instanceId: uid("tok"),
             cardId: "",
             oracleId: "",
-            ownerId: PLAYER_ID,
+            ownerId: playerId,
             zone: "battlefield",
             tapped: false,
             faceDown: false,
@@ -769,25 +770,26 @@ export const useGameStore = create<GameStore>((set, get) => {
             position: { x: 40 + i * 30, y: 40 + i * 20 },
           };
           core.instances[inst.instanceId] = inst;
-          core.zoneOrder[PLAYER_ID]!.battlefield.push(inst.instanceId);
+          core.zoneOrder[playerId]!.battlefield.push(inst.instanceId);
         }
-        pushLog(core, PLAYER_ID, {
+        pushLog(core, playerId, {
           type: "token",
           cardName: spec.name,
-          message: `Created ${count}x ${spec.name} token.`,
+          message: `Created ${count}x ${spec.name} token${playerId === PLAYER_ID ? "" : " (opponent's field)"}.`,
         });
       }),
 
-    createTokenFromCard: (card, count = 1) => {
+    createTokenFromCard: (card, count = 1, playerId = PLAYER_ID) => {
       const s = get();
       if (!s.cards[card.id]) set({ cards: { ...s.cards, [card.id]: card } });
       mutate((core) => {
+        if (!core.zoneOrder[playerId]) return;
         for (let i = 0; i < count; i++) {
           const inst: CardInstance = {
             instanceId: uid("tok"),
             cardId: card.id,
             oracleId: card.oracle_id,
-            ownerId: PLAYER_ID,
+            ownerId: playerId,
             zone: "battlefield",
             tapped: false,
             faceDown: false,
@@ -799,12 +801,12 @@ export const useGameStore = create<GameStore>((set, get) => {
             position: { x: 40 + i * 30, y: 40 + i * 20 },
           };
           core.instances[inst.instanceId] = inst;
-          core.zoneOrder[PLAYER_ID]!.battlefield.push(inst.instanceId);
+          core.zoneOrder[playerId]!.battlefield.push(inst.instanceId);
         }
-        pushLog(core, PLAYER_ID, {
+        pushLog(core, playerId, {
           type: "token",
           cardName: card.name,
-          message: `Created ${count}x ${card.name} token.`,
+          message: `Created ${count}x ${card.name} token${playerId === PLAYER_ID ? "" : " (opponent's field)"}.`,
         });
       });
     },
@@ -826,7 +828,9 @@ export const useGameStore = create<GameStore>((set, get) => {
             : { x: 60, y: 60 },
         };
         core.instances[inst.instanceId] = inst;
-        core.zoneOrder[inst.ownerId]!.battlefield.push(inst.instanceId);
+        // The copy enters under the source's CONTROLLER (not owner) — cloning
+        // a stolen/lent card must land on the field it's actually on.
+        core.zoneOrder[controllerOf(src)]!.battlefield.push(inst.instanceId);
         pushLog(core, PLAYER_ID, {
           type: "token",
           cardName: cardName({ ...core, cards: s.cards }, src),
@@ -1054,7 +1058,9 @@ export const useGameStore = create<GameStore>((set, get) => {
 
     beginPlayerTurn: (playerId, draw = true) => {
       mutate((core) => {
-        core.turn += 1;
+        // The turn counter tracks ROUNDS: it only advances when the turn
+        // comes back to you, not on each opponent's turn.
+        if (playerId === PLAYER_ID) core.turn += 1;
         core.activePlayerId = playerId;
         core.phase = "main1";
         let untapped = 0;

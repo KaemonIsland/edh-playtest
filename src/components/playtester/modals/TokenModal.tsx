@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { ScryCard } from "@/types";
-import { useGameStore } from "@/lib/game/store";
+import { PLAYER_ID, useGameStore } from "@/lib/game/store";
 import { useUiStore } from "@/lib/game/uiStore";
 import { searchTokensClient } from "@/lib/scryfall/resolve";
 import { CardImage } from "@/components/cards/CardImage";
@@ -10,9 +10,14 @@ import { Modal } from "./Modal";
 
 const COLORS = ["W", "U", "B", "R", "G"] as const;
 
-export function TokenModal() {
-  const createToken = useGameStore((s) => s.createToken);
-  const createTokenFromCard = useGameStore((s) => s.createTokenFromCard);
+export function TokenModal({ playerId = PLAYER_ID }: { playerId?: string }) {
+  const g = useGameStore();
+  const createToken = (spec: Parameters<typeof g.createToken>[0], count?: number) =>
+    g.createToken(spec, count, playerId);
+  const createTokenFromCard = (card: ScryCard, count?: number) =>
+    g.createTokenFromCard(card, count, playerId);
+  const targetName =
+    playerId === PLAYER_ID ? null : (g.players[playerId]?.name ?? "Opponent");
   const closeModal = useUiStore((s) => s.closeModal);
 
   const [tab, setTab] = useState<"custom" | "scryfall">("custom");
@@ -41,7 +46,7 @@ export function TokenModal() {
   };
 
   return (
-    <Modal title="Create token" wide>
+    <Modal title={targetName ? `Create token — ${targetName}'s field` : "Create token"} wide>
       <div className="mb-4 flex gap-1 rounded-lg bg-stone-900 p-1">
         {(["custom", "scryfall"] as const).map((t) => (
           <button

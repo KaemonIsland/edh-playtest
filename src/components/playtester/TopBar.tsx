@@ -44,6 +44,17 @@ export function TopBar() {
       onClick: () => startBottoming(mulligans),
     },
     { label: "", separator: true },
+    { label: "End & log this game…", onClick: () => openModal({ kind: "loggame" }) },
+    {
+      label: "View deck showcase",
+      onClick: async () => {
+        if (!g.deck) return;
+        const { getRepo } = await import("@/lib/repo");
+        await getRepo().saveDeck(g.deck);
+        router.push(`/d/${g.deck.id}`);
+      },
+    },
+    { label: "", separator: true },
     { label: "Save / load snapshots…", onClick: () => openModal({ kind: "snapshots" }) },
     { label: "Settings…", onClick: () => openModal({ kind: "settings" }) },
     { label: "", separator: true },

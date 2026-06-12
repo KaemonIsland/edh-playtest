@@ -8,6 +8,7 @@ import { useBotStore } from "@/lib/game/botStore";
 import { useUiStore, type MenuItem } from "@/lib/game/uiStore";
 import { CardImage } from "@/components/cards/CardImage";
 import { BattlefieldCard } from "./BattlefieldCard";
+import { buildBattlefieldMenu } from "./cardMenu";
 
 /** Small face-down pile / count for one of the bot's zones. */
 function BotPile({
@@ -279,6 +280,11 @@ export function OpponentBoard({ side = false }: { side?: boolean }) {
           className={`relative min-h-0 flex-1 overflow-auto transition-colors ${
             isOver ? "bg-stone-950/80" : ""
           }`}
+          onContextMenu={(e) => {
+            if ((e.target as HTMLElement).closest("[data-bf-card]")) return;
+            e.preventDefault();
+            openMenu(e.clientX, e.clientY, buildBattlefieldMenu(viewedId));
+          }}
         >
           {ids.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center text-xs text-stone-700 select-none">

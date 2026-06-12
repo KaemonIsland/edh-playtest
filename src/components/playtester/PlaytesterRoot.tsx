@@ -34,6 +34,7 @@ import { DicePanel } from "./modals/DicePanel";
 import { KeybindsPanel } from "./modals/KeybindsPanel";
 import { SnapshotsPanel } from "./modals/SnapshotsPanel";
 import { SettingsPanel } from "./modals/SettingsPanel";
+import { LogGameModal } from "./modals/LogGameModal";
 
 const DROP_ZONES: Zone[] = ["battlefield", "hand", "library", "graveyard", "exile", "command"];
 const GRID = 20;
@@ -163,7 +164,8 @@ export function PlaytesterRoot() {
         );
       else if (key === keybinds.scry) fire(() => ui.openModal({ kind: "scry", count: 1, surveil: false }));
       else if (key === keybinds.mill) fire(() => game.mill(1));
-      else if (key === keybinds.tokenModal) fire(() => ui.openModal({ kind: "token" }));
+      else if (key === keybinds.tokenModal)
+        fire(() => ui.openModal({ kind: "token", playerId: PLAYER_ID }));
       else if (key === keybinds.dice) fire(() => ui.openModal({ kind: "dice" }));
       else if (key === keybinds.toggleLog) fire(() => ui.setLogOpen(!ui.logOpen));
       else if (key === keybinds.keybindsHelp) fire(() => ui.openModal({ kind: "keybinds" }));
@@ -237,11 +239,12 @@ export function PlaytesterRoot() {
         />
       )}
       {ui.modal.kind === "scry" && <ScryModal count={ui.modal.count} surveil={ui.modal.surveil} />}
-      {ui.modal.kind === "token" && <TokenModal />}
+      {ui.modal.kind === "token" && <TokenModal playerId={ui.modal.playerId} />}
       {ui.modal.kind === "dice" && <DicePanel />}
       {ui.modal.kind === "keybinds" && <KeybindsPanel onChange={setKeybinds} />}
       {ui.modal.kind === "snapshots" && <SnapshotsPanel />}
       {ui.modal.kind === "settings" && <SettingsPanel />}
+      {ui.modal.kind === "loggame" && <LogGameModal />}
     </DndContext>
   );
 }
