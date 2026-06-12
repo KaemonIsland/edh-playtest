@@ -5,6 +5,7 @@ import type { Deck, ScryCard } from "@/types";
 import { activeFace } from "@/types";
 import { groupEntries } from "@/lib/deck/stats";
 import { CardImage } from "@/components/cards/CardImage";
+import { ManaCost } from "@/components/cards/ManaCost";
 
 /** Grouped decklist with hover previews and a card-detail modal. */
 export function DecklistView({ deck }: { deck: Deck }) {
@@ -13,16 +14,20 @@ export function DecklistView({ deck }: { deck: Deck }) {
   const groups = groupEntries(deck);
 
   return (
-    <section className="relative rounded-xl border border-stone-800 bg-stone-950 p-4">
-      <h2 className="mb-3 text-sm font-bold tracking-wide text-stone-200 uppercase">Decklist</h2>
+    <div className="relative">
       <div className="columns-1 gap-6 sm:columns-2 lg:columns-3">
-        {groups.map(({ group, entries }) => (
+        {groups.map(({ group, entries, inDeck }) => (
           <div key={group} className="mb-4 break-inside-avoid">
             <h3 className="mb-1 text-xs font-bold text-emerald-500">
               {group}{" "}
               <span className="font-normal text-stone-600">
                 ({entries.reduce((n, e) => n + e.quantity, 0)})
               </span>
+              {!inDeck && (
+                <span className="ml-1.5 rounded bg-stone-800 px-1 py-0.5 text-[8px] font-bold tracking-wide text-stone-500 uppercase">
+                  not in deck
+                </span>
+              )}
             </h3>
             <ul>
               {entries.map((e) => (
@@ -35,9 +40,7 @@ export function DecklistView({ deck }: { deck: Deck }) {
                   >
                     <span className="text-stone-600">{e.quantity}</span>
                     <span className="truncate">{e.card.name}</span>
-                    <span className="ml-auto shrink-0 font-mono text-[10px] text-stone-600">
-                      {e.card.mana_cost?.replace(/[{}]/g, "") ?? ""}
-                    </span>
+                    <ManaCost cost={e.card.mana_cost} size={10} className="ml-auto shrink-0" />
                   </button>
                 </li>
               ))}
@@ -87,6 +90,6 @@ export function DecklistView({ deck }: { deck: Deck }) {
           </div>
         </div>
       )}
-    </section>
+    </div>
   );
 }

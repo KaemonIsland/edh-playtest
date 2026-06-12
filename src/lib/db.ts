@@ -32,6 +32,14 @@ export interface CachedEdhrecDeck {
 
 export const EDHREC_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
+/** One row of the synced local card database (oracle-level, slim). */
+export interface OracleCard {
+  oracle_id: string;
+  /** Lowercased name for prefix search. */
+  nameKey: string;
+  card: ScryCard;
+}
+
 const db = new Dexie("edh-playtest") as Dexie & {
   cards: EntityTable<CachedCard, "key">;
   snapshots: EntityTable<GameSnapshot, "id">;
@@ -40,6 +48,7 @@ const db = new Dexie("edh-playtest") as Dexie & {
   primers: EntityTable<Primer, "deckId">;
   deckVersions: EntityTable<DeckVersion & { id?: number }, "id">;
   games: EntityTable<GameRecord & { id?: number }, "id">;
+  oracle: EntityTable<OracleCard, "oracle_id">;
 };
 
 db.version(1).stores({
@@ -61,6 +70,17 @@ db.version(3).stores({
   primers: "deckId",
   deckVersions: "++id, deckId, date",
   games: "++id, deckId, date",
+});
+
+db.version(4).stores({
+  cards: "key, card.id, fetchedAt",
+  snapshots: "++id, savedAt, deckName",
+  edhrecDecks: "slug, fetchedAt",
+  showcaseDecks: "id, name, updatedAt",
+  primers: "deckId",
+  deckVersions: "++id, deckId, date",
+  games: "++id, deckId, date",
+  oracle: "oracle_id, nameKey",
 });
 
 export { db };

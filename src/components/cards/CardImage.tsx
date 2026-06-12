@@ -41,12 +41,14 @@ export const CardImage = memo(function CardImage({
 }: CardImageProps) {
   if (faceDown) {
     return (
-      <div
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src="/card-back.jpg"
+        alt="Face-down card"
+        draggable={false}
         style={style}
-        className={`flex items-center justify-center rounded-[7%] border border-stone-600 bg-gradient-to-br from-amber-900 via-amber-950 to-stone-950 ${className}`}
-      >
-        <div className="h-1/2 w-1/2 rounded-full bg-gradient-to-br from-amber-700 to-amber-950 opacity-70" />
-      </div>
+        className={`rounded-[5%] object-cover select-none ${className}`}
+      />
     );
   }
 

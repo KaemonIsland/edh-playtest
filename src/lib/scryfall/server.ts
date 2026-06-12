@@ -132,6 +132,32 @@ export async function fuzzyNamed(name: string): Promise<ScryCard | null> {
   return toScryCard(await res.json());
 }
 
+/** Name search (fallback when the local card DB isn't synced). */
+export async function searchCardsByName(query: string): Promise<ScryCard[]> {
+  const res = await throttled(() =>
+    fetch(
+      `${SCRYFALL}/cards/search?q=${encodeURIComponent(query)}&unique=cards&order=name`,
+      { headers: HEADERS },
+    ),
+  );
+  if (!res.ok) return [];
+  const data = (await res.json()) as { data: RawCard[] };
+  return data.data.slice(0, 30).map(toScryCard);
+}
+
+/** Every printing of an oracle id (variation picker). */
+export async function searchPrintings(oracleId: string): Promise<ScryCard[]> {
+  const res = await throttled(() =>
+    fetch(
+      `${SCRYFALL}/cards/search?q=${encodeURIComponent(`oracleid:${oracleId}`)}&unique=prints&order=released`,
+      { headers: HEADERS },
+    ),
+  );
+  if (!res.ok) return [];
+  const data = (await res.json()) as { data: RawCard[] };
+  return data.data.slice(0, 60).map(toScryCard);
+}
+
 /** Search Scryfall for token cards matching a query. */
 export async function searchTokens(query: string): Promise<ScryCard[]> {
   const q = `${query} include:extras (t:token or t:emblem)`;

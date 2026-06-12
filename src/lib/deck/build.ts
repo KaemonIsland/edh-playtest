@@ -46,6 +46,15 @@ export async function buildDeckFromText(text: string, name: string): Promise<Bui
     (e) => e.isCommander || !commanders.some((c) => c.oracle_id === e.card.oracle_id),
   );
 
+  // Sideboard/Maybeboard imports are excluded from the deck by default.
+  const categorySettings: Deck["categorySettings"] = {};
+  for (const e of deduped) {
+    const cat = e.categories[0];
+    if (cat === "Sideboard" || cat === "Maybeboard") {
+      categorySettings[cat] = { inDeck: false, inPrice: false };
+    }
+  }
+
   return {
     deck: {
       id: uid("deck"),
@@ -54,6 +63,7 @@ export async function buildDeckFromText(text: string, name: string): Promise<Bui
       commanders,
       entries: deduped,
       colorIdentity: [...new Set(commanders.flatMap((c) => c.color_identity))],
+      ...(Object.keys(categorySettings).length > 0 ? { categorySettings } : {}),
     },
     notFound,
     warnings: parsed.warnings,

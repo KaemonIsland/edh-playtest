@@ -66,6 +66,21 @@ export interface DeckEntry {
   categories: string[];
 }
 
+/** Per-category builder settings. Categories like Sideboard/Maybeboard set
+ * `inDeck: false` and are excluded from counts, stats, price, and playtesting. */
+export interface CategorySetting {
+  inDeck: boolean;
+  inPrice: boolean;
+}
+
+/** Manual corrections to the auto-detected role buckets in the stats panel. */
+export interface RoleOverrides {
+  ramp?: { add: string[]; remove: string[] };
+  draw?: { add: string[]; remove: string[] };
+  interaction?: { add: string[]; remove: string[] };
+  tutors?: { add: string[]; remove: string[] };
+}
+
 export interface Deck {
   id: string;
   name: string;
@@ -73,6 +88,23 @@ export interface Deck {
   commanders: ScryCard[];
   entries: DeckEntry[];
   colorIdentity: string[];
+  /** User-made tags for sorting/filtering the deck library. */
+  tags?: string[];
+  /** Settings per category name (only non-default entries stored). */
+  categorySettings?: Record<string, CategorySetting>;
+  /** Commander bracket (1–5). Unset = show the auto-guess. */
+  bracket?: number;
+  roleOverrides?: RoleOverrides;
+}
+
+/** Entries that count as part of the deck (not sideboard/maybeboard). */
+export function includedEntries(deck: Deck): DeckEntry[] {
+  const settings = deck.categorySettings ?? {};
+  return deck.entries.filter((e) => {
+    const cat = e.categories[0];
+    if (!cat) return true;
+    return settings[cat]?.inDeck !== false;
+  });
 }
 
 /** One parsed line of a raw decklist, before Scryfall resolution. */

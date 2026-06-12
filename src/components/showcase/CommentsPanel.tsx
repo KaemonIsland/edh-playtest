@@ -22,15 +22,14 @@ export function CommentsPanel({ deckId }: { deckId: string }) {
 
   if (repo.mode === "local") {
     return (
-      <section className="rounded-xl border border-stone-800 bg-stone-950 p-4">
-        <h2 className="mb-2 text-sm font-bold tracking-wide text-stone-200 uppercase">Comments</h2>
+      <div>
         <p className="text-xs text-stone-600">
           Comments need the shared backend. Create a Supabase project, run{" "}
           <code className="rounded bg-stone-900 px-1">supabase/schema.sql</code>, and set{" "}
           <code className="rounded bg-stone-900 px-1">NEXT_PUBLIC_SUPABASE_URL</code> +{" "}
           <code className="rounded bg-stone-900 px-1">NEXT_PUBLIC_SUPABASE_ANON_KEY</code>.
         </p>
-      </section>
+      </div>
     );
   }
 
@@ -88,10 +87,7 @@ export function CommentsPanel({ deckId }: { deckId: string }) {
   );
 
   return (
-    <section className="rounded-xl border border-stone-800 bg-stone-950 p-4">
-      <h2 className="mb-3 text-sm font-bold tracking-wide text-stone-200 uppercase">
-        Comments <span className="text-stone-600">({comments.length})</span>
-      </h2>
+    <div>
       {roots.map((c) => (
         <CommentRow key={String(c.id)} comment={c} depth={0} />
       ))}
@@ -125,6 +121,6 @@ export function CommentsPanel({ deckId }: { deckId: string }) {
           Post comment
         </button>
       </div>
-    </section>
+    </div>
   );
 }

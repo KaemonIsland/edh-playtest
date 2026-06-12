@@ -13,7 +13,7 @@ import type {
   TokenSpec,
   Zone,
 } from "@/types";
-import { ALL_ZONES, PHASES, isCreature, isLand } from "@/types";
+import { ALL_ZONES, PHASES, includedEntries, isCreature, isLand } from "@/types";
 import { uid } from "./ids";
 import { shuffled } from "./shuffle";
 
@@ -252,7 +252,7 @@ function setupPlayer(core: GameCore, deck: Deck, playerId: string, name: string)
   };
 
   const libraryIds: string[] = [];
-  for (const entry of deck.entries) {
+  for (const entry of includedEntries(deck)) {
     if (entry.isCommander) continue;
     for (let i = 0; i < entry.quantity; i++) {
       libraryIds.push(newInstance(entry.card, "library").instanceId);

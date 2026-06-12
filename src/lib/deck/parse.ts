@@ -99,8 +99,10 @@ export function parseDecklist(text: string): ParsedDecklist {
       quantity = 1;
     }
     if (isSideboard) {
-      warnings.push(`Skipped sideboard/maybeboard card: ${name}`);
-      continue;
+      // Keep the card, but file it under a board category the builder
+      // excludes from the deck by default.
+      const board = currentSection === "maybe" ? "Maybeboard" : "Sideboard";
+      if (!categories.includes(board)) categories.unshift(board);
     }
 
     // Merge duplicate names

@@ -51,11 +51,8 @@ export function GameLogPanel({ deckId }: { deckId: string }) {
   };
 
   return (
-    <section className="rounded-xl border border-stone-800 bg-stone-950 p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-bold tracking-wide text-stone-200 uppercase">
-          Games <span className="text-stone-600">({stats.total})</span>
-        </h2>
+    <div>
+      <div className="mb-3 flex justify-end">
         <button
           onClick={() => setAdding(!adding)}
           className="rounded-md bg-stone-800 px-3 py-1 text-[11px] font-semibold text-stone-300 hover:bg-stone-700"
@@ -239,6 +236,6 @@ export function GameLogPanel({ deckId }: { deckId: string }) {
           </div>
         ))}
       </div>
-    </section>
+    </div>
   );
 }

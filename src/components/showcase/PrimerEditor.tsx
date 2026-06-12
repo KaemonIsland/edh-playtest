@@ -37,8 +37,7 @@ export function PrimerEditor({ deckId }: { deckId: string }) {
   };
 
   return (
-    <section className="rounded-xl border border-stone-800 bg-stone-950 p-4">
-      <h2 className="mb-3 text-sm font-bold tracking-wide text-stone-200 uppercase">Primer</h2>
+    <div>
       {!hasContent && !editing && (
         <p className="mb-2 text-xs text-stone-600">
           No primer yet — click a section to write one (markdown supported).
@@ -94,6 +93,6 @@ export function PrimerEditor({ deckId }: { deckId: string }) {
           </div>
         ))}
       </div>
-    </section>
+    </div>
   );
 }
