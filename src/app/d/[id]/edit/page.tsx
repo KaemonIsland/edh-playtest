@@ -14,6 +14,7 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import type { CategorySetting, Deck, DeckEntry, ScryCard } from "@/types";
+import { BOARD_CATEGORIES, isBoardCategory } from "@/types";
 import { getRepo, type VersionChange } from "@/lib/repo";
 import { groupEntries, typeGroup } from "@/lib/deck/stats";
 import { searchCards, getCardDbStatus } from "@/lib/cards/carddb";
@@ -324,7 +325,7 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
       if (
         !isTypeGroup &&
         d.categorySettings?.[category] === undefined &&
-        (category === "Sideboard" || category === "Maybeboard")
+        isBoardCategory(category)
       ) {
         d.categorySettings = { ...d.categorySettings, [category]: { inDeck: false, inPrice: false } };
       }
@@ -369,7 +370,7 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
   const inDeckGroups = groups.filter((gp) => gp.inDeck);
   const excludedGroups = groups.filter((gp) => !gp.inDeck);
   // Empty board columns only appear as drop targets while dragging.
-  const boardColumns = (["Sideboard", "Maybeboard"] as const).filter(
+  const boardColumns = (BOARD_CATEGORIES).filter(
     (b) => !groups.some((g) => g.group === b) && dragName !== null,
   );
   const showCommanderColumn = commanderEntries.length > 0 || dragName !== null;

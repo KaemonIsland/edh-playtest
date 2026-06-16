@@ -1,6 +1,6 @@
 import Dexie, { type EntityTable } from "dexie";
 import type { GameSnapshot, ScryCard } from "@/types";
-import type { DeckVersion, GameRecord, Primer, ShowcaseDeck } from "@/lib/repo/types";
+import type { CollectionCard, DeckVersion, GameRecord, Primer, ShowcaseDeck } from "@/lib/repo/types";
 
 /** A cached Scryfall card. `key` is the normalized name used for lookups. */
 export interface CachedCard {
@@ -49,6 +49,7 @@ const db = new Dexie("edh-playtest") as Dexie & {
   deckVersions: EntityTable<DeckVersion & { id?: number }, "id">;
   games: EntityTable<GameRecord & { id?: number }, "id">;
   oracle: EntityTable<OracleCard, "oracle_id">;
+  collection: EntityTable<CollectionCard, "id">;
 };
 
 db.version(1).stores({
@@ -83,6 +84,18 @@ db.version(4).stores({
   oracle: "oracle_id, nameKey",
 });
 
+db.version(5).stores({
+  cards: "key, card.id, fetchedAt",
+  snapshots: "++id, savedAt, deckName",
+  edhrecDecks: "slug, fetchedAt",
+  showcaseDecks: "id, name, updatedAt",
+  primers: "deckId",
+  deckVersions: "++id, deckId, date",
+  games: "++id, deckId, date",
+  oracle: "oracle_id, nameKey",
+  collection: "id, oracleId, updatedAt",
+});
+
 export { db };
 
 export async function getCachedCards(
@@ -105,9 +118,12 @@ export async function getCachedCards(
 
 export async function cacheCards(cards: ScryCard[]): Promise<void> {
   const now = Date.now();
-  await db.cards.bulkPut(
-    cards.map((card) => ({ key: normalizeCardName(card.name), card, fetchedAt: now })),
-  );
+  const rows = cards.map((card) => ({ key: normalizeCardName(card.name), card, fetchedAt: now }));
+  // Chunk so a large import (25k printings) isn't one huge transaction.
+  const CHUNK = 1000;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    await db.cards.bulkPut(rows.slice(i, i + CHUNK));
+  }
 }
 
 export async function getCardsById(ids: string[]): Promise<Map<string, ScryCard>> {

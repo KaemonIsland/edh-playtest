@@ -57,6 +57,10 @@ export interface ScryCard {
   set?: string;
   set_name?: string;
   collector_number?: string;
+  /** Release date (YYYY-MM-DD) for "newest first" ordering. */
+  released_at?: string;
+  rarity?: string;
+  keywords?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -68,6 +72,15 @@ export interface DeckEntry {
   quantity: number;
   isCommander: boolean;
   categories: string[];
+  /** Marked as a proxy in this deck (not a card you physically own). */
+  proxy?: boolean;
+}
+
+/** Categories that never count toward the deck (excluded by default). */
+export const BOARD_CATEGORIES = ["Sideboard", "Maybeboard", "Ideas"] as const;
+
+export function isBoardCategory(name: string): boolean {
+  return (BOARD_CATEGORIES as readonly string[]).includes(name);
 }
 
 /** Per-category builder settings. Categories like Sideboard/Maybeboard set

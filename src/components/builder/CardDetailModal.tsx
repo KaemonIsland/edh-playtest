@@ -1,9 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { Deck, DeckEntry, ScryCard } from "@/types";
-import { getRepo } from "@/lib/repo";
+import { isBoardCategory } from "@/types";
+import {
+  collectionEntryId,
+  FINISH_LABEL,
+  finishPrice,
+  getRepo,
+  type CardFinish,
+  type CollectionCard,
+} from "@/lib/repo";
+import { adjustCollection } from "@/lib/cards/collection";
 import { fetchPrintings } from "@/lib/cards/carddb";
 import { typeGroup } from "@/lib/deck/stats";
 import { CardImage } from "@/components/cards/CardImage";
@@ -11,19 +20,25 @@ import { ManaCost } from "@/components/cards/ManaCost";
 
 type Tab = "options" | "indecks" | "collection" | "info" | "rulings";
 
-const TABS: { key: Tab; label: string }[] = [
-  { key: "options", label: "Card options" },
-  { key: "indecks", label: "In decks" },
-  { key: "collection", label: "Collection records" },
-  { key: "info", label: "Card info" },
-  { key: "rulings", label: "Rulings" },
-];
+const FINISHES: CardFinish[] = ["nonfoil", "foil", "etched"];
 
 const QUICK_CATEGORIES = ["Draw", "Interaction", "Ramp", "Maybeboard"];
 
 interface Ruling {
   published_at: string;
   comment: string;
+}
+
+/** How a saved deck uses this card (for the "In decks" tab). */
+interface DeckUsage {
+  id: string;
+  name: string;
+  printingName: string;
+  printingId: string;
+  quantity: number;
+  isCommander: boolean;
+  categories: string[];
+  proxy: boolean;
 }
 
 function printingLabel(p: ScryCard): string {
@@ -45,36 +60,91 @@ export function CardDetailModal({
   onNavigate,
 }: {
   card: ScryCard;
-  deck: Deck;
-  update: (fn: (d: Deck) => void) => void;
+  /** Deck context — when omitted (e.g. the collection page), the deck-only
+   * "Card options" tab is hidden and "Collection records" is the default. */
+  deck?: Deck;
+  update?: (fn: (d: Deck) => void) => void;
   onClose: () => void;
   /** Optional prev/next navigation context (search results or column). */
   siblings?: ScryCard[];
   onNavigate?: (card: ScryCard) => void;
 }) {
-  const [tab, setTab] = useState<Tab>("options");
+  const hasDeck = !!deck && !!update;
+  const [tab, setTab] = useState<Tab>(hasDeck ? "options" : "collection");
   const [printings, setPrintings] = useState<ScryCard[] | null>(null);
   const [allPrintingsOpen, setAllPrintingsOpen] = useState(false);
   const [printFilter, setPrintFilter] = useState("");
   const [rulings, setRulings] = useState<Ruling[] | null>(null);
-  const [inDecks, setInDecks] = useState<{ id: string; name: string }[] | null>(null);
+  const [inDecks, setInDecks] = useState<DeckUsage[] | null>(null);
+  const [owned, setOwned] = useState<CollectionCard[] | null>(null);
+  const [allDecks, setAllDecks] = useState<{ id: string; name: string }[] | null>(null);
+  const [addTarget, setAddTarget] = useState("");
+  const [addBoard, setAddBoard] = useState<"Maybeboard" | "Ideas">("Maybeboard");
+  const [addNote, setAddNote] = useState<string | null>(null);
+
+  const TABS: { key: Tab; label: string }[] = [
+    ...(hasDeck ? [{ key: "options" as Tab, label: "Card options" }] : []),
+    { key: "indecks", label: "In decks" },
+    { key: "collection", label: "Collection records" },
+    { key: "info", label: "Card info" },
+    { key: "rulings", label: "Rulings" },
+  ];
 
   const entry: DeckEntry | null =
-    deck.entries.find((e) => e.card.oracle_id === card.oracle_id) ?? null;
+    deck?.entries.find((e) => e.card.oracle_id === card.oracle_id) ?? null;
   // Prefer the deck's chosen printing for display when the card is in the deck.
   const shown = entry?.card.oracle_id === card.oracle_id ? entry.card : card;
   const qty = entry?.quantity ?? 0;
   const allCategories = useMemo(() => {
     const names = new Set<string>(QUICK_CATEGORIES);
-    for (const e of deck.entries) for (const c of e.categories) names.add(c);
+    for (const e of deck?.entries ?? []) for (const c of e.categories) names.add(c);
     return [...names].sort();
-  }, [deck.entries]);
+  }, [deck?.entries]);
+
+  const refreshOwned = useCallback(async () => {
+    setOwned(await getRepo().getCollectionByOracle(card.oracle_id));
+  }, [card.oracle_id]);
+
+  const refreshInDecks = useCallback(async () => {
+    const repo = getRepo();
+    const metas = await repo.listDecks();
+    const usages: DeckUsage[] = [];
+    const all: { id: string; name: string }[] = [];
+    for (const m of metas) {
+      const full = await repo.getDeck(m.id);
+      if (!full) continue;
+      all.push({ id: m.id, name: m.name });
+      const e =
+        full.deck.entries.find((x) => x.card.oracle_id === card.oracle_id) ??
+        (full.deck.commanders.find((c) => c.oracle_id === card.oracle_id)
+          ? { card: full.deck.commanders.find((c) => c.oracle_id === card.oracle_id)!, quantity: 1, isCommander: true, categories: [], proxy: false }
+          : undefined);
+      if (e) {
+        usages.push({
+          id: m.id,
+          name: m.name,
+          printingName: e.card.set_name ?? e.card.set?.toUpperCase() ?? "—",
+          printingId: e.card.id,
+          quantity: e.quantity,
+          isCommander: e.isCommander,
+          categories: e.categories,
+          proxy: e.proxy ?? false,
+        });
+      }
+    }
+    setInDecks(usages);
+    setAllDecks(all);
+  }, [card.oracle_id]);
 
   // Reset per-card state when navigating between cards.
   useEffect(() => {
     setPrintings(null);
     setRulings(null);
     setInDecks(null);
+    setOwned(null);
+    setAllDecks(null);
+    setAddTarget("");
+    setAddNote(null);
     setAllPrintingsOpen(false);
     setPrintFilter("");
   }, [card.oracle_id]);
@@ -92,27 +162,48 @@ export function CardDetailModal({
         .catch(() => setRulings([]));
     }
     if (tab === "indecks" && inDecks === null) {
-      void (async () => {
-        const repo = getRepo();
-        const metas = await repo.listDecks();
-        const hits: { id: string; name: string }[] = [];
-        for (const m of metas) {
-          const full = await repo.getDeck(m.id);
-          if (
-            full &&
-            (full.deck.entries.some((e) => e.card.oracle_id === card.oracle_id) ||
-              full.deck.commanders.some((c) => c.oracle_id === card.oracle_id))
-          ) {
-            hits.push({ id: m.id, name: m.name });
-          }
-        }
-        setInDecks(hits);
-      })();
+      void refreshInDecks();
     }
-  }, [tab, rulings, inDecks, shown.id, card.oracle_id]);
+    if (tab === "collection" && owned === null) {
+      void refreshOwned();
+    }
+  }, [tab, rulings, inDecks, owned, shown.id, card.oracle_id, refreshOwned, refreshInDecks]);
+
+  /** Add the shown printing to a deck's Maybeboard/Ideas (excluded category). */
+  const addToDeck = async (deckId: string, board: "Maybeboard" | "Ideas") => {
+    const repo = getRepo();
+    const full = await repo.getDeck(deckId);
+    if (!full) return;
+    const d = full.deck;
+    const existing = d.entries.find((e) => e.card.oracle_id === card.oracle_id);
+    if (existing) {
+      if (!existing.categories.includes(board)) existing.categories.unshift(board);
+    } else {
+      d.entries.push({ card: shown, quantity: 1, isCommander: false, categories: [board] });
+    }
+    if (d.categorySettings?.[board] === undefined) {
+      d.categorySettings = { ...d.categorySettings, [board]: { inDeck: false, inPrice: false } };
+    }
+    await repo.saveDeck(d);
+    setAddNote(`Added to ${full.deck.name} → ${board}.`);
+    await refreshInDecks();
+  };
+
+  /** Toggle the proxied flag for this card in a deck. */
+  const toggleProxy = async (deckId: string, value: boolean) => {
+    const repo = getRepo();
+    const full = await repo.getDeck(deckId);
+    if (!full) return;
+    const e = full.deck.entries.find((x) => x.card.oracle_id === card.oracle_id);
+    if (e) {
+      e.proxy = value;
+      await repo.saveDeck(full.deck);
+      await refreshInDecks();
+    }
+  };
 
   const setQty = (next: number) => {
-    update((d) => {
+    update?.((d) => {
       const e = d.entries.find((x) => x.card.oracle_id === card.oracle_id);
       if (next <= 0) {
         if (e) {
@@ -127,7 +218,7 @@ export function CardDetailModal({
   };
 
   const toggleCommander = () => {
-    update((d) => {
+    update?.((d) => {
       let e = d.entries.find((x) => x.card.oracle_id === card.oracle_id);
       if (!e) {
         e = { card: shown, quantity: 1, isCommander: false, categories: [] };
@@ -140,7 +231,7 @@ export function CardDetailModal({
   };
 
   const addCategory = (cat: string) => {
-    update((d) => {
+    update?.((d) => {
       let e = d.entries.find((x) => x.card.oracle_id === card.oracle_id);
       if (!e) {
         e = { card: shown, quantity: 1, isCommander: false, categories: [] };
@@ -149,7 +240,7 @@ export function CardDetailModal({
       if (!e.categories.includes(cat)) e.categories.push(cat);
       if (
         d.categorySettings?.[cat] === undefined &&
-        (cat === "Sideboard" || cat === "Maybeboard")
+        isBoardCategory(cat)
       ) {
         d.categorySettings = { ...d.categorySettings, [cat]: { inDeck: false, inPrice: false } };
       }
@@ -157,7 +248,7 @@ export function CardDetailModal({
   };
 
   const selectPrinting = (p: ScryCard) => {
-    update((d) => {
+    update?.((d) => {
       const e = d.entries.find((x) => x.card.oracle_id === card.oracle_id);
       if (e) e.card = p;
       const ci = d.commanders.findIndex((c) => c.oracle_id === p.oracle_id);
@@ -166,6 +257,20 @@ export function CardDetailModal({
     onNavigate?.(p); // keep the modal's `card` in sync with the chosen printing
     setAllPrintingsOpen(false);
   };
+
+  /** Adjust owned quantity of the shown printing in a given finish. */
+  const adjustOwned = async (finish: CardFinish, delta: number) => {
+    await adjustCollection(shown, finish, delta);
+    await refreshOwned();
+  };
+  /** Adjust a specific printing (from the all-printings list). */
+  const adjustOwnedFor = async (printing: ScryCard, finish: CardFinish, delta: number) => {
+    await adjustCollection(printing, finish, delta);
+    await refreshOwned();
+  };
+  const ownedQty = (printingId: string, finish: CardFinish): number =>
+    owned?.find((o) => o.id === collectionEntryId(printingId, finish))?.quantity ?? 0;
+  const totalOwned = (owned ?? []).reduce((n, o) => n + o.quantity, 0);
 
   const idx = siblings?.findIndex((s) => s.oracle_id === card.oracle_id) ?? -1;
   const prev = idx > 0 ? siblings![idx - 1] : null;
@@ -309,7 +414,7 @@ export function CardDetailModal({
                       <div key={cat} className="flex items-center gap-2 rounded-md bg-stone-900 px-2.5 py-1.5">
                         <button
                           onClick={() =>
-                            update((d) => {
+                            update?.((d) => {
                               const e = d.entries.find((x) => x.card.oracle_id === card.oracle_id);
                               if (e)
                                 e.categories = [cat, ...e.categories.filter((c) => c !== cat)];
@@ -323,7 +428,7 @@ export function CardDetailModal({
                         <span className="flex-1 text-xs text-stone-200">{cat}</span>
                         <button
                           onClick={() =>
-                            update((d) => {
+                            update?.((d) => {
                               const e = d.entries.find((x) => x.card.oracle_id === card.oracle_id);
                               if (e) e.categories = e.categories.filter((c) => c !== cat);
                             })
@@ -380,32 +485,247 @@ export function CardDetailModal({
             )}
 
             {tab === "indecks" && (
-              <div>
+              <div className="flex flex-col gap-3">
                 {inDecks === null ? (
                   <p className="text-xs text-stone-600">Checking your decks…</p>
                 ) : inDecks.length === 0 ? (
-                  <p className="text-xs text-stone-600">Not used in any saved deck.</p>
+                  <p className="text-xs text-stone-600">Not used in any saved deck yet.</p>
                 ) : (
                   <div className="flex flex-col gap-1.5">
                     {inDecks.map((d) => (
-                      <Link
-                        key={d.id}
-                        href={`/d/${d.id}`}
-                        className="rounded-md bg-stone-900 px-3 py-2 text-xs font-semibold text-stone-200 hover:bg-stone-800"
-                      >
-                        {d.name}
-                      </Link>
+                      <div key={d.id} className="rounded-md bg-stone-900 px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <Link
+                            href={`/d/${d.id}`}
+                            className="min-w-0 flex-1 truncate text-xs font-semibold text-stone-200 hover:text-white"
+                          >
+                            {d.name}
+                          </Link>
+                          {d.isCommander && (
+                            <span className="rounded bg-amber-900/60 px-1.5 py-0.5 text-[9px] font-bold text-amber-300">
+                              CMDR
+                            </span>
+                          )}
+                          {d.categories.map((c) => (
+                            <span key={c} className="rounded bg-stone-800 px-1.5 py-0.5 text-[9px] text-stone-400">
+                              {c}
+                            </span>
+                          ))}
+                          <span className="text-[10px] text-stone-500">×{d.quantity}</span>
+                        </div>
+                        <div className="mt-1 flex items-center gap-2 text-[10px] text-stone-500">
+                          <span className={d.printingId === shown.id ? "text-emerald-400" : ""}>
+                            {d.printingName}
+                            {d.printingId === shown.id ? " (this printing)" : ""}
+                          </span>
+                          <label className="ml-auto flex cursor-pointer items-center gap-1">
+                            <input
+                              type="checkbox"
+                              checked={d.proxy}
+                              onChange={(e) => void toggleProxy(d.id, e.target.checked)}
+                              className="accent-amber-600"
+                            />
+                            Proxied
+                          </label>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 )}
+
+                {/* Add to a deck's Maybeboard / Ideas */}
+                <div className="rounded-lg border border-stone-800 bg-stone-900/40 p-3">
+                  <div className="mb-1.5 text-[10px] font-bold tracking-wide text-stone-500 uppercase">
+                    Add this card to a deck
+                  </div>
+                  {allDecks && allDecks.length === 0 ? (
+                    <p className="text-[11px] text-stone-600">
+                      No saved decks yet. Save a deck first to add ideas to it.
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select
+                        value={addTarget}
+                        onChange={(e) => setAddTarget(e.target.value)}
+                        className="min-w-40 flex-1 rounded-md border border-stone-700 bg-stone-900 px-2 py-1.5 text-xs outline-none focus:border-emerald-600"
+                      >
+                        <option value="">Choose a deck…</option>
+                        {(allDecks ?? []).map((dk) => (
+                          <option key={dk.id} value={dk.id}>
+                            {dk.name}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="flex gap-0.5 rounded-lg bg-stone-900 p-0.5">
+                        {(["Maybeboard", "Ideas"] as const).map((b) => (
+                          <button
+                            key={b}
+                            onClick={() => setAddBoard(b)}
+                            className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition ${
+                              addBoard === b ? "bg-stone-700 text-white" : "text-stone-400 hover:text-stone-200"
+                            }`}
+                          >
+                            {b}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        onClick={() => addTarget && void addToDeck(addTarget, addBoard)}
+                        disabled={!addTarget}
+                        className="rounded-md bg-emerald-700 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-600 disabled:opacity-40"
+                      >
+                        + Add
+                      </button>
+                    </div>
+                  )}
+                  <p className="mt-1.5 text-[10px] text-stone-600">
+                    “Ideas” and “Maybeboard” don’t count toward the deck — they just flag cards
+                    you’re considering.
+                  </p>
+                  {addNote && <p className="mt-1 text-[11px] text-emerald-400">{addNote}</p>}
+                </div>
               </div>
             )}
 
             {tab === "collection" && (
-              <p className="text-xs text-stone-600">
-                Collection tracking arrives in Phase 5 — this tab will show how many copies you
-                own, in which printings/finishes.
-              </p>
+              <div className="flex flex-col gap-3">
+                <div className="text-xs text-stone-400">
+                  You own <span className="font-bold text-stone-100">{totalOwned}</span> cop
+                  {totalOwned === 1 ? "y" : "ies"} of this card across all printings/finishes.
+                </div>
+
+                {/* Add the shown printing in each finish */}
+                <div className="rounded-lg border border-stone-800 bg-stone-900/40 p-3">
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-bold tracking-wide text-stone-500 uppercase">
+                      This printing — {shown.set_name ?? shown.set?.toUpperCase() ?? "?"}
+                      {shown.collector_number ? ` · #${shown.collector_number}` : ""}
+                    </span>
+                    <button
+                      onClick={() => setAllPrintingsOpen(true)}
+                      disabled={!printings || printings.length === 0}
+                      className="shrink-0 rounded-md border border-stone-700 bg-stone-900 px-2 py-1 text-[10px] font-semibold text-stone-200 hover:bg-stone-800 disabled:opacity-40"
+                    >
+                      ▦ Choose printing
+                    </button>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    {FINISHES.map((finish) => {
+                      const q = ownedQty(shown.id, finish);
+                      const price = finishPrice(shown, finish);
+                      return (
+                        <div key={finish} className="flex items-center gap-2">
+                          <span className="w-16 text-xs font-semibold text-stone-300">
+                            {FINISH_LABEL[finish]}
+                          </span>
+                          <span className="w-16 text-[11px] text-emerald-400">
+                            {price !== null ? `$${price.toFixed(2)}` : "—"}
+                          </span>
+                          <button
+                            onClick={() => void adjustOwned(finish, -1)}
+                            disabled={q === 0}
+                            className="h-7 w-7 rounded-md bg-stone-800 font-bold text-rose-400 hover:bg-stone-700 disabled:opacity-30"
+                          >
+                            −
+                          </button>
+                          <span className="min-w-7 text-center text-sm font-bold">{q}</span>
+                          <button
+                            onClick={() => void adjustOwned(finish, 1)}
+                            className="h-7 w-7 rounded-md bg-stone-800 font-bold text-emerald-400 hover:bg-stone-700"
+                          >
+                            +
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-1.5 text-[10px] text-stone-600">
+                    Use “▦ All printings” in Card options{hasDeck ? "" : "/the printing picker"} to
+                    own a different art.
+                  </p>
+                </div>
+
+                {/* Other owned printings */}
+                {owned === null ? (
+                  <p className="text-xs text-stone-600">Loading collection…</p>
+                ) : owned.filter((o) => o.printingId !== shown.id).length > 0 ? (
+                  <div>
+                    <div className="mb-1 text-[10px] font-bold tracking-wide text-stone-500 uppercase">
+                      Other printings you own
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      {owned
+                        .filter((o) => o.printingId !== shown.id)
+                        .map((o) => (
+                          <div
+                            key={o.id}
+                            className="flex items-center gap-2 rounded-md bg-stone-900 px-2.5 py-1.5 text-xs"
+                          >
+                            <button
+                              onClick={() => onNavigate?.(o.card)}
+                              className="min-w-0 flex-1 truncate text-left text-stone-300 hover:text-white"
+                              title="View this printing"
+                            >
+                              {o.setName ?? o.setCode} · {FINISH_LABEL[o.finish]}
+                            </button>
+                            <span className="font-bold text-stone-100">×{o.quantity}</span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* All printings — add any directly, click to view */}
+                <div>
+                  <div className="mb-1 text-[10px] font-bold tracking-wide text-stone-500 uppercase">
+                    All printings {printings ? `(${printings.length})` : ""}
+                  </div>
+                  {printings === null ? (
+                    <p className="text-xs text-stone-600">Loading printings…</p>
+                  ) : (
+                    <div className="grid max-h-96 grid-cols-1 gap-1.5 overflow-y-auto sm:grid-cols-2">
+                      {printings.map((p) => {
+                        const nf = ownedQty(p.id, "nonfoil");
+                        const fl = ownedQty(p.id, "foil");
+                        return (
+                          <div
+                            key={p.id}
+                            className={`flex items-center gap-2 rounded-md border bg-stone-900 px-2 py-1.5 ${
+                              p.id === shown.id ? "border-emerald-600" : "border-stone-800"
+                            }`}
+                          >
+                            <button
+                              onClick={() => onNavigate?.(p)}
+                              className="min-w-0 flex-1 text-left"
+                              title="View this printing"
+                            >
+                              <div className="truncate text-[11px] font-semibold text-stone-200">
+                                {p.set_name ?? p.set?.toUpperCase()}
+                              </div>
+                              <div className="text-[9px] text-stone-500">
+                                #{p.collector_number} · ${p.prices?.usd ?? "—"}
+                                {p.prices?.usd_foil ? ` · foil $${p.prices.usd_foil}` : ""}
+                              </div>
+                            </button>
+                            <div className="flex shrink-0 flex-col gap-0.5">
+                              <PrintingQty
+                                label="NF"
+                                qty={nf}
+                                onAdjust={(d) => void adjustOwnedFor(p, "nonfoil", d)}
+                              />
+                              <PrintingQty
+                                label="F"
+                                qty={fl}
+                                onAdjust={(d) => void adjustOwnedFor(p, "foil", d)}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
 
             {tab === "info" && (
@@ -548,6 +868,37 @@ export function CardDetailModal({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Compact finish quantity stepper used in the all-printings list. */
+function PrintingQty({
+  label,
+  qty,
+  onAdjust,
+}: {
+  label: string;
+  qty: number;
+  onAdjust: (delta: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-0.5">
+      <span className="w-4 text-[8px] font-bold text-stone-500">{label}</span>
+      <button
+        onClick={() => onAdjust(-1)}
+        disabled={qty === 0}
+        className="flex h-5 w-5 items-center justify-center rounded bg-stone-800 text-[11px] font-bold text-rose-400 hover:bg-stone-700 disabled:opacity-30"
+      >
+        −
+      </button>
+      <span className="w-5 text-center text-[11px] font-bold text-stone-200">{qty}</span>
+      <button
+        onClick={() => onAdjust(1)}
+        className="flex h-5 w-5 items-center justify-center rounded bg-stone-800 text-[11px] font-bold text-emerald-400 hover:bg-stone-700"
+      >
+        +
+      </button>
     </div>
   );
 }

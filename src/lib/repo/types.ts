@@ -82,6 +82,47 @@ export interface DeckComment {
   parentId?: number | string | null;
 }
 
+// ---------------------------------------------------------------------------
+// Collection tracking (Phase 5)
+// ---------------------------------------------------------------------------
+
+export type CardFinish = "nonfoil" | "foil" | "etched";
+
+export const FINISH_LABEL: Record<CardFinish, string> = {
+  nonfoil: "Nonfoil",
+  foil: "Foil",
+  etched: "Etched",
+};
+
+/** One owned stack: a specific printing in a specific finish. */
+export interface CollectionCard {
+  /** `${printingId}:${finish}` — unique per printing+finish. */
+  id: string;
+  printingId: string;
+  oracleId: string;
+  name: string;
+  setCode?: string;
+  setName?: string;
+  collectorNumber?: string;
+  finish: CardFinish;
+  quantity: number;
+  /** Cached printing for display (image, price). */
+  card: import("@/types").ScryCard;
+  addedAt: number;
+  updatedAt: number;
+}
+
+export function collectionEntryId(printingId: string, finish: CardFinish): string {
+  return `${printingId}:${finish}`;
+}
+
+/** Unit price for a finish, from the cached printing's Scryfall (TCGplayer) data. */
+export function finishPrice(card: import("@/types").ScryCard, finish: CardFinish): number | null {
+  const raw = finish === "nonfoil" ? card.prices?.usd : card.prices?.usd_foil;
+  const n = parseFloat(raw ?? "");
+  return Number.isFinite(n) ? n : null;
+}
+
 export interface Repo {
   readonly mode: "local" | "supabase";
 
@@ -104,6 +145,22 @@ export interface Repo {
   listComments(deckId: string): Promise<DeckComment[]>;
   addComment(comment: DeckComment): Promise<void>;
   deleteComment(deckId: string, id: number | string): Promise<void>;
+
+  // Collection
+  listCollection(): Promise<CollectionCard[]>;
+  /** Single owned stack by id (indexed — for +/- edits, no full-table read). */
+  getCollectionEntry(id: string): Promise<CollectionCard | null>;
+  /** All owned printings/finishes of one oracle id (indexed). */
+  getCollectionByOracle(oracleId: string): Promise<CollectionCard[]>;
+  /** Distinct owned oracle ids (for the "owned only" filter; no blob load). */
+  ownedOracleIds(): Promise<Set<string>>;
+  /** Upsert an owned stack; quantity <= 0 removes it. */
+  saveCollectionEntry(entry: CollectionCard): Promise<void>;
+  /** Bulk upsert (CSV import). Entries with quantity <= 0 are skipped. */
+  saveCollectionEntries(entries: CollectionCard[]): Promise<void>;
+  removeCollectionEntry(id: string): Promise<void>;
+  /** Wipe the whole collection (for "replace on import"). */
+  clearCollection(): Promise<void>;
 }
 
 /** Aggregates computed from a deck's game log. */

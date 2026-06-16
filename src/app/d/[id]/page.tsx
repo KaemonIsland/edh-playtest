@@ -12,6 +12,7 @@ import { PrimerEditor } from "@/components/showcase/PrimerEditor";
 import { ChangelogTimeline } from "@/components/showcase/ChangelogTimeline";
 import { GameLogPanel } from "@/components/showcase/GameLogPanel";
 import { CommentsPanel } from "@/components/showcase/CommentsPanel";
+import { CollectionCoverage } from "@/components/showcase/CollectionCoverage";
 import { ShareBar } from "@/components/showcase/ShareBar";
 
 export default function ShowcasePage({ params }: { params: Promise<{ id: string }> }) {
@@ -84,6 +85,7 @@ export default function ShowcasePage({ params }: { params: Promise<{ id: string 
           <nav className="mb-6 flex gap-4 text-xs text-stone-400">
             <Link href="/" className="hover:text-white">Import</Link>
             <Link href="/decks" className="hover:text-white">My decks</Link>
+            <Link href="/collection" className="hover:text-white">Collection</Link>
           </nav>
           <div className="flex flex-wrap items-end gap-3">
             <h1 className="text-3xl font-black tracking-tight text-white drop-shadow">
@@ -182,6 +184,9 @@ export default function ShowcasePage({ params }: { params: Promise<{ id: string 
         </Section>
         <Section id="stats" title="Deck stats">
           <StatsPanel deck={deck.deck} onUpdateDeck={(d) => void updateDeck(d)} />
+        </Section>
+        <Section id="collection" title="Collection coverage">
+          <CollectionCoverage deck={deck.deck} />
         </Section>
         <Section id="games" title="Games">
           <GameLogPanel deckId={deck.id} />

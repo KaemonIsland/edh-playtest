@@ -5,6 +5,7 @@ import { isCreature } from "@/types";
 import { parseDecklist } from "./parse";
 import { resolveCards } from "@/lib/scryfall/resolve";
 import { uid } from "@/lib/game/ids";
+import { isBoardCategory } from "@/types";
 
 export interface BuiltDeck {
   deck: Deck;
@@ -50,7 +51,7 @@ export async function buildDeckFromText(text: string, name: string): Promise<Bui
   const categorySettings: Deck["categorySettings"] = {};
   for (const e of deduped) {
     const cat = e.categories[0];
-    if (cat === "Sideboard" || cat === "Maybeboard") {
+    if (cat && isBoardCategory(cat)) {
       categorySettings[cat] = { inDeck: false, inPrice: false };
     }
   }

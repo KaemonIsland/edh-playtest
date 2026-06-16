@@ -2,6 +2,8 @@
 
 import type { Deck } from "@/types";
 import type {
+  CardFinish,
+  CollectionCard,
   DeckComment,
   DeckVersion,
   GameRecord,
@@ -302,5 +304,142 @@ export class SupabaseRepo implements Repo {
 
   async deleteComment(_deckId: string, id: number | string): Promise<void> {
     await this.rest(`comments?id=eq.${encodeURIComponent(String(id))}`, { method: "DELETE" });
+  }
+
+  async listCollection(): Promise<CollectionCard[]> {
+    type Row = {
+      id: string;
+      printing_id: string;
+      oracle_id: string;
+      name: string;
+      set_code: string | null;
+      set_name: string | null;
+      collector_number: string | null;
+      finish: CardFinish;
+      quantity: number;
+      card_json: CollectionCard["card"];
+      added_at: string;
+      updated_at: string;
+    };
+    const rows = await this.rest<Row[]>("collection?select=*&order=updated_at.desc");
+    return rows.map((r) => ({
+      id: r.id,
+      printingId: r.printing_id,
+      oracleId: r.oracle_id,
+      name: r.name,
+      setCode: r.set_code ?? undefined,
+      setName: r.set_name ?? undefined,
+      collectorNumber: r.collector_number ?? undefined,
+      finish: r.finish,
+      quantity: r.quantity,
+      card: r.card_json,
+      addedAt: new Date(r.added_at).getTime(),
+      updatedAt: new Date(r.updated_at).getTime(),
+    }));
+  }
+
+  private mapCollectionRow = (r: {
+    id: string;
+    printing_id: string;
+    oracle_id: string;
+    name: string;
+    set_code: string | null;
+    set_name: string | null;
+    collector_number: string | null;
+    finish: CardFinish;
+    quantity: number;
+    card_json: CollectionCard["card"];
+    added_at?: string;
+    updated_at: string;
+  }): CollectionCard => ({
+    id: r.id,
+    printingId: r.printing_id,
+    oracleId: r.oracle_id,
+    name: r.name,
+    setCode: r.set_code ?? undefined,
+    setName: r.set_name ?? undefined,
+    collectorNumber: r.collector_number ?? undefined,
+    finish: r.finish,
+    quantity: r.quantity,
+    card: r.card_json,
+    addedAt: r.added_at ? new Date(r.added_at).getTime() : Date.now(),
+    updatedAt: new Date(r.updated_at).getTime(),
+  });
+
+  async getCollectionEntry(id: string): Promise<CollectionCard | null> {
+    const rows = await this.rest<Parameters<typeof this.mapCollectionRow>[0][]>(
+      `collection?id=eq.${encodeURIComponent(id)}&select=*`,
+    );
+    return rows[0] ? this.mapCollectionRow(rows[0]) : null;
+  }
+
+  async getCollectionByOracle(oracleId: string): Promise<CollectionCard[]> {
+    const rows = await this.rest<Parameters<typeof this.mapCollectionRow>[0][]>(
+      `collection?oracle_id=eq.${encodeURIComponent(oracleId)}&select=*`,
+    );
+    return rows.map(this.mapCollectionRow);
+  }
+
+  async ownedOracleIds(): Promise<Set<string>> {
+    const rows = await this.rest<{ oracle_id: string }[]>("collection?select=oracle_id");
+    return new Set(rows.map((r) => r.oracle_id));
+  }
+
+  async saveCollectionEntry(entry: CollectionCard): Promise<void> {
+    if (entry.quantity <= 0) {
+      await this.removeCollectionEntry(entry.id);
+      return;
+    }
+    await this.rest("collection?on_conflict=id", {
+      method: "POST",
+      body: JSON.stringify([
+        {
+          id: entry.id,
+          printing_id: entry.printingId,
+          oracle_id: entry.oracleId,
+          name: entry.name,
+          set_code: entry.setCode ?? null,
+          set_name: entry.setName ?? null,
+          collector_number: entry.collectorNumber ?? null,
+          finish: entry.finish,
+          quantity: entry.quantity,
+          card_json: entry.card,
+          updated_at: new Date().toISOString(),
+        },
+      ]),
+    });
+  }
+
+  async saveCollectionEntries(entries: CollectionCard[]): Promise<void> {
+    const valid = entries.filter((e) => e.quantity > 0);
+    const CHUNK = 500;
+    for (let i = 0; i < valid.length; i += CHUNK) {
+      const rows = valid.slice(i, i + CHUNK).map((entry) => ({
+        id: entry.id,
+        printing_id: entry.printingId,
+        oracle_id: entry.oracleId,
+        name: entry.name,
+        set_code: entry.setCode ?? null,
+        set_name: entry.setName ?? null,
+        collector_number: entry.collectorNumber ?? null,
+        finish: entry.finish,
+        quantity: entry.quantity,
+        card_json: entry.card,
+        updated_at: new Date().toISOString(),
+      }));
+      await this.rest("collection?on_conflict=id", {
+        method: "POST",
+        body: JSON.stringify(rows),
+      });
+    }
+  }
+
+  async removeCollectionEntry(id: string): Promise<void> {
+    await this.rest(`collection?id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+
+  async clearCollection(): Promise<void> {
+    // PostgREST requires a filter on DELETE; this matches all rows.
+    await this.rest("collection?id=neq.__none__", { method: "DELETE" });
   }
 }

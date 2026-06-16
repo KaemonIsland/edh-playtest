@@ -222,12 +222,20 @@ export default function ImportPage() {
               Paste a Commander decklist, resolve it, and goldfish it on a real-feeling table.
             </p>
           </div>
-          <a
-            href="/decks"
-            className="rounded-md border border-stone-700 bg-stone-900 px-3 py-1.5 text-xs font-semibold text-stone-300 hover:bg-stone-800"
-          >
-            🗂 My decks
-          </a>
+          <div className="flex gap-2">
+            <a
+              href="/collection"
+              className="rounded-md border border-stone-700 bg-stone-900 px-3 py-1.5 text-xs font-semibold text-stone-300 hover:bg-stone-800"
+            >
+              📚 Collection
+            </a>
+            <a
+              href="/decks"
+              className="rounded-md border border-stone-700 bg-stone-900 px-3 py-1.5 text-xs font-semibold text-stone-300 hover:bg-stone-800"
+            >
+              🗂 My decks
+            </a>
+          </div>
         </div>
 
         {stage === "input" && (

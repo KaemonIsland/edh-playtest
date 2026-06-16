@@ -74,6 +74,23 @@ create table if not exists comments (
 );
 create index if not exists comments_deck_idx on comments(deck_id, date);
 
+create table if not exists collection (
+  id text primary key,              -- `${printing_id}:${finish}`
+  owner_id uuid references profiles(id),
+  printing_id text not null,        -- scryfall card id of the printing
+  oracle_id text not null,
+  name text not null,
+  set_code text,
+  set_name text,
+  collector_number text,
+  finish text not null default 'nonfoil' check (finish in ('nonfoil','foil','etched')),
+  quantity int not null default 1,
+  card_json jsonb not null,
+  added_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists collection_oracle_idx on collection(oracle_id);
+
 -- Row-Level Security (permissive anon policies; see note at top).
 alter table profiles enable row level security;
 alter table decks enable row level security;
@@ -81,6 +98,7 @@ alter table primers enable row level security;
 alter table deck_versions enable row level security;
 alter table games enable row level security;
 alter table comments enable row level security;
+alter table collection enable row level security;
 
 create policy "anon read decks" on decks for select using (true);
 create policy "anon write decks" on decks for insert with check (true);
@@ -102,3 +120,8 @@ create policy "anon delete games" on games for delete using (true);
 create policy "anon read comments" on comments for select using (true);
 create policy "anon write comments" on comments for insert with check (true);
 create policy "anon delete comments" on comments for delete using (true);
+
+create policy "anon read collection" on collection for select using (true);
+create policy "anon write collection" on collection for insert with check (true);
+create policy "anon update collection" on collection for update using (true);
+create policy "anon delete collection" on collection for delete using (true);

@@ -3,6 +3,7 @@
 import type { Deck } from "@/types";
 import { db } from "@/lib/db";
 import type {
+  CollectionCard,
   DeckComment,
   DeckVersion,
   GameRecord,
@@ -104,5 +105,48 @@ export class LocalRepo implements Repo {
 
   async deleteComment(): Promise<void> {
     throw new Error("Comments require the Supabase backend (see supabase/schema.sql).");
+  }
+
+  async listCollection(): Promise<CollectionCard[]> {
+    return db.collection.orderBy("updatedAt").reverse().toArray();
+  }
+
+  async getCollectionEntry(id: string): Promise<CollectionCard | null> {
+    return (await db.collection.get(id)) ?? null;
+  }
+
+  async getCollectionByOracle(oracleId: string): Promise<CollectionCard[]> {
+    return db.collection.where("oracleId").equals(oracleId).toArray();
+  }
+
+  async ownedOracleIds(): Promise<Set<string>> {
+    // uniqueKeys reads only the index, not the full card_json blobs.
+    const keys = await db.collection.orderBy("oracleId").uniqueKeys();
+    return new Set(keys as string[]);
+  }
+
+  async saveCollectionEntry(entry: CollectionCard): Promise<void> {
+    if (entry.quantity <= 0) {
+      await db.collection.delete(entry.id);
+      return;
+    }
+    await db.collection.put({ ...entry, updatedAt: Date.now() });
+  }
+
+  async saveCollectionEntries(entries: CollectionCard[]): Promise<void> {
+    const valid = entries.filter((e) => e.quantity > 0);
+    // Chunk so a 25k import isn't one giant transaction.
+    const CHUNK = 1000;
+    for (let i = 0; i < valid.length; i += CHUNK) {
+      await db.collection.bulkPut(valid.slice(i, i + CHUNK));
+    }
+  }
+
+  async removeCollectionEntry(id: string): Promise<void> {
+    await db.collection.delete(id);
+  }
+
+  async clearCollection(): Promise<void> {
+    await db.collection.clear();
   }
 }

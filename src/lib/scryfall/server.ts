@@ -79,6 +79,9 @@ export function toScryCard(raw: RawCard): ScryCard {
     set: raw.set,
     set_name: raw.set_name,
     collector_number: raw.collector_number,
+    released_at: raw.released_at,
+    rarity: raw.rarity,
+    keywords: raw.keywords,
   };
 }
 
@@ -140,6 +143,25 @@ export async function resolveCardNames(names: string[]): Promise<ResolveResult> 
   return { cards, notFound };
 }
 
+/** Resolve specific printings by Scryfall id (<=75 per call). */
+export async function resolveCardsByIds(ids: string[]): Promise<ResolveResult> {
+  const unique = [...new Set(ids)].slice(0, 75);
+  if (unique.length === 0) return { cards: [], notFound: [] };
+  const res = await throttled(() =>
+    fetch(`${SCRYFALL}/cards/collection`, {
+      method: "POST",
+      headers: HEADERS,
+      body: JSON.stringify({ identifiers: unique.map((id) => ({ id })) }),
+    }),
+  );
+  if (!res.ok) return { cards: [], notFound: unique };
+  const data = (await res.json()) as { data: RawCard[]; not_found?: { id: string }[] };
+  return {
+    cards: data.data.map(toScryCard),
+    notFound: (data.not_found ?? []).map((n) => n.id).filter(Boolean),
+  };
+}
+
 export async function fuzzyNamed(name: string): Promise<ScryCard | null> {
   const res = await throttled(() =>
     fetch(`${SCRYFALL}/cards/named?fuzzy=${encodeURIComponent(name)}`, {
@@ -150,11 +172,11 @@ export async function fuzzyNamed(name: string): Promise<ScryCard | null> {
   return toScryCard(await res.json());
 }
 
-/** Name search (fallback when the local card DB isn't synced). */
+/** Name search (fallback when the local card DB isn't synced). Newest first. */
 export async function searchCardsByName(query: string): Promise<ScryCard[]> {
   const res = await throttled(() =>
     fetch(
-      `${SCRYFALL}/cards/search?q=${encodeURIComponent(query)}&unique=cards&order=name`,
+      `${SCRYFALL}/cards/search?q=${encodeURIComponent(query)}&unique=cards&order=released&dir=desc`,
       { headers: HEADERS },
     ),
   );

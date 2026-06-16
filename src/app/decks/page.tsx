@@ -68,12 +68,20 @@ export default function DecksPage() {
               Saved showcases — primers, stats, changelogs, and game history.
             </p>
           </div>
-          <Link
-            href="/"
-            className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-600"
-          >
-            + Import a deck
-          </Link>
+          <div className="flex gap-2">
+            <Link
+              href="/collection"
+              className="rounded-md border border-stone-700 bg-stone-900 px-4 py-2 text-sm font-semibold text-stone-300 hover:bg-stone-800"
+            >
+              📚 Collection
+            </Link>
+            <Link
+              href="/"
+              className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-600"
+            >
+              + Import a deck
+            </Link>
+          </div>
         </div>
 
         {/* Tag filter */}
