@@ -198,6 +198,15 @@ export async function searchPrintings(oracleId: string): Promise<ScryCard[]> {
   return data.data.slice(0, 60).map(toScryCard);
 }
 
+/** A single random card matching a Scryfall query (e.g. is:commander). */
+export async function randomCard(query: string): Promise<ScryCard | null> {
+  const res = await throttled(() =>
+    fetch(`${SCRYFALL}/cards/random?q=${encodeURIComponent(query)}`, { headers: HEADERS }),
+  );
+  if (!res.ok) return null;
+  return toScryCard(await res.json());
+}
+
 /** Search Scryfall for token cards matching a query. */
 export async function searchTokens(query: string): Promise<ScryCard[]> {
   const q = `${query} include:extras (t:token or t:emblem)`;

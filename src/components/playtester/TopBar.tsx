@@ -59,7 +59,7 @@ export function TopBar() {
     { label: "Save / load snapshots…", onClick: () => openModal({ kind: "snapshots" }) },
     { label: "Settings…", onClick: () => openModal({ kind: "settings" }) },
     { label: "", separator: true },
-    { label: "Import a different deck", danger: true, onClick: () => router.push("/") },
+    { label: "Import a different deck", danger: true, onClick: () => router.push("/import") },
   ];
 
   return (

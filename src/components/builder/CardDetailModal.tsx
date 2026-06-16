@@ -674,57 +674,6 @@ export function CardDetailModal({
                     </div>
                   </div>
                 ) : null}
-
-                {/* All printings — add any directly, click to view */}
-                <div>
-                  <div className="mb-1 text-[10px] font-bold tracking-wide text-stone-500 uppercase">
-                    All printings {printings ? `(${printings.length})` : ""}
-                  </div>
-                  {printings === null ? (
-                    <p className="text-xs text-stone-600">Loading printings…</p>
-                  ) : (
-                    <div className="grid max-h-96 grid-cols-1 gap-1.5 overflow-y-auto sm:grid-cols-2">
-                      {printings.map((p) => {
-                        const nf = ownedQty(p.id, "nonfoil");
-                        const fl = ownedQty(p.id, "foil");
-                        return (
-                          <div
-                            key={p.id}
-                            className={`flex items-center gap-2 rounded-md border bg-stone-900 px-2 py-1.5 ${
-                              p.id === shown.id ? "border-emerald-600" : "border-stone-800"
-                            }`}
-                          >
-                            <button
-                              onClick={() => onNavigate?.(p)}
-                              className="min-w-0 flex-1 text-left"
-                              title="View this printing"
-                            >
-                              <div className="truncate text-[11px] font-semibold text-stone-200">
-                                {p.set_name ?? p.set?.toUpperCase()}
-                              </div>
-                              <div className="text-[9px] text-stone-500">
-                                #{p.collector_number} · ${p.prices?.usd ?? "—"}
-                                {p.prices?.usd_foil ? ` · foil $${p.prices.usd_foil}` : ""}
-                              </div>
-                            </button>
-                            <div className="flex shrink-0 flex-col gap-0.5">
-                              <PrintingQty
-                                label="NF"
-                                qty={nf}
-                                onAdjust={(d) => void adjustOwnedFor(p, "nonfoil", d)}
-                              />
-                              <PrintingQty
-                                label="F"
-                                qty={fl}
-                                onAdjust={(d) => void adjustOwnedFor(p, "foil", d)}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
               </div>
             )}
 
@@ -780,6 +729,73 @@ export function CardDetailModal({
             )}
           </div>
         </div>
+
+        {/* All printings — full width below everything (collection tab) */}
+        {tab === "collection" && (
+          <div className="border-t border-stone-800 px-5 pb-5 pt-3">
+            <div className="mb-1.5 text-[10px] font-bold tracking-wide text-stone-500 uppercase">
+              All printings {printings ? `(${printings.length})` : ""}
+            </div>
+            {printings === null ? (
+              <p className="text-xs text-stone-600">Loading printings…</p>
+            ) : (
+              <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-2">
+                {printings.map((p) => {
+                  const nf = ownedQty(p.id, "nonfoil");
+                  const fl = ownedQty(p.id, "foil");
+                  const owned = nf + fl;
+                  return (
+                    <div
+                      key={p.id}
+                      className={`flex w-32 shrink-0 flex-col gap-1 rounded-md border bg-stone-900 p-1.5 ${
+                        p.id === shown.id
+                          ? "border-emerald-600"
+                          : owned > 0
+                            ? "border-amber-700/60"
+                            : "border-stone-800"
+                      }`}
+                    >
+                      <button
+                        onClick={() => onNavigate?.(p)}
+                        className="group relative"
+                        title="View this printing"
+                      >
+                        <CardImage
+                          card={p}
+                          className={`aspect-[5/7] w-full transition group-hover:ring-2 group-hover:ring-sky-500 ${
+                            owned === 0 ? "opacity-50 grayscale" : ""
+                          }`}
+                        />
+                        {owned > 0 && (
+                          <span className="absolute top-1 left-1 rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-black">
+                            ×{owned}
+                          </span>
+                        )}
+                      </button>
+                      <div className="truncate text-[9px] text-stone-400" title={p.set_name}>
+                        {p.set_name ?? p.set?.toUpperCase()}
+                      </div>
+                      <div className="text-[9px] text-stone-500">
+                        ${p.prices?.usd ?? "—"}
+                        {p.prices?.usd_foil ? ` · F $${p.prices.usd_foil}` : ""}
+                      </div>
+                      <PrintingQty
+                        label="NF"
+                        qty={nf}
+                        onAdjust={(d) => void adjustOwnedFor(p, "nonfoil", d)}
+                      />
+                      <PrintingQty
+                        label="F"
+                        qty={fl}
+                        onAdjust={(d) => void adjustOwnedFor(p, "foil", d)}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Prev / next navigation */}
         {(prev || next) && (

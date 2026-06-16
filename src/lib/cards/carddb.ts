@@ -180,6 +180,15 @@ export interface SearchFilters {
   keyword?: string;
   /** Restrict to a set code. */
   set?: string;
+  /** Only cards that can be a commander. */
+  commander?: boolean;
+}
+
+function isCommanderCard(c: ScryCard): boolean {
+  const tl = c.type_line.toLowerCase();
+  if (tl.includes("legendary") && tl.includes("creature")) return true;
+  const text = c.oracle_text ?? c.card_faces?.map((f) => f.oracle_text ?? "").join("\n") ?? "";
+  return /can be your commander/i.test(text);
 }
 
 function cmpNum(value: number, op: NumOp, target: number): boolean {
@@ -199,7 +208,8 @@ function hasAnyFilter(f: SearchFilters): boolean {
       f.toughness !== undefined ||
       (f.rarities && f.rarities.length) ||
       f.keyword?.trim() ||
-      f.set?.trim(),
+      f.set?.trim() ||
+      f.commander,
   );
 }
 
@@ -254,6 +264,7 @@ export async function advancedSearchCards(f: SearchFilters, limit = 120): Promis
         if (rarities.length && !rarities.includes((c.rarity ?? "").toLowerCase())) return false;
         if (keyword && !(c.keywords ?? []).some((k) => k.toLowerCase() === keyword)) return false;
         if (set && (c.set ?? "").toLowerCase() !== set) return false;
+        if (f.commander && !isCommanderCard(c)) return false;
         return true;
       })
       .limit(limit)
@@ -279,6 +290,7 @@ export async function advancedSearchCards(f: SearchFilters, limit = 120): Promis
   if (f.rarities && f.rarities.length) parts.push(`(${f.rarities.map((r) => `r:${r}`).join(" or ")})`);
   if (f.keyword?.trim()) parts.push(`keyword:${f.keyword.trim()}`);
   if (f.set?.trim()) parts.push(`s:${f.set.trim()}`);
+  if (f.commander) parts.push("is:commander");
   if (parts.length === 0) return [];
   const res = await fetch(`/api/cards/search?q=${encodeURIComponent(parts.join(" "))}`);
   if (!res.ok) return [];

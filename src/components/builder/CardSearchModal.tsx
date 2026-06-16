@@ -34,6 +34,7 @@ function toSearchFilters(f: CardFilters, keyword: string, set: string): SearchFi
     rarities: f.rarities.length ? f.rarities : undefined,
     keyword: keyword.trim() || undefined,
     set: set.trim() || undefined,
+    commander: f.commanderOnly || undefined,
   };
 }
 
@@ -290,7 +291,17 @@ export function CardSearchModal({
               <NumberRow label="Toughness" op={filters.toughnessOp} value={filters.toughness} onOp={(toughnessOp) => setF({ toughnessOp })} onValue={(toughness) => setF({ toughness })} />
             </div>
 
-            {/* Rarity */}
+            {/* Commander + Rarity */}
+            <button
+              onClick={() => setF({ commanderOnly: !filters.commanderOnly })}
+              className={`self-start rounded-md px-2.5 py-1.5 text-xs font-semibold transition ${
+                filters.commanderOnly
+                  ? "bg-amber-700 text-white"
+                  : "border border-stone-700 bg-stone-900 text-stone-300 hover:bg-stone-800"
+              }`}
+            >
+              👑 Can be commander
+            </button>
             <div className="flex flex-wrap items-center gap-1">
               <span className="mr-1 text-[10px] font-bold tracking-wide text-stone-500 uppercase">Rarity</span>
               {RARITIES.map((r) => (

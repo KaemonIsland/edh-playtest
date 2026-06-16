@@ -83,7 +83,7 @@ export default function ShowcasePage({ params }: { params: Promise<{ id: string 
         <div className="absolute inset-0 bg-gradient-to-t from-[#08080a] via-[#08080a]/70 to-transparent" />
         <div className="relative mx-auto max-w-5xl px-4 pt-20 pb-6">
           <nav className="mb-6 flex gap-4 text-xs text-stone-400">
-            <Link href="/" className="hover:text-white">Import</Link>
+            <Link href="/import" className="hover:text-white">Import</Link>
             <Link href="/decks" className="hover:text-white">My decks</Link>
             <Link href="/collection" className="hover:text-white">Collection</Link>
           </nav>

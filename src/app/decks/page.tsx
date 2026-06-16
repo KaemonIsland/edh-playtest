@@ -76,7 +76,7 @@ export default function DecksPage() {
               📚 Collection
             </Link>
             <Link
-              href="/"
+              href="/import"
               className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-600"
             >
               + Import a deck

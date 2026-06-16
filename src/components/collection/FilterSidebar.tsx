@@ -31,6 +31,8 @@ export interface CardFilters {
   toughness: string;
   rarities: string[];
   text: string;
+  /** Only cards that can be a commander (legendary creature / "can be your commander"). */
+  commanderOnly: boolean;
 }
 
 export function emptyFilters(): CardFilters {
@@ -47,7 +49,17 @@ export function emptyFilters(): CardFilters {
     toughness: "",
     rarities: [],
     text: "",
+    commanderOnly: false,
   };
+}
+
+/** Heuristic for "can be a commander": legendary creature or rules text. */
+export function canBeCommander(card: ScryCard): boolean {
+  const tl = card.type_line.toLowerCase();
+  if (tl.includes("legendary") && tl.includes("creature")) return true;
+  const text =
+    card.oracle_text ?? card.card_faces?.map((f) => f.oracle_text ?? "").join("\n") ?? "";
+  return /can be your commander/i.test(text);
 }
 
 export function filtersActive(f: CardFilters): boolean {
@@ -59,7 +71,8 @@ export function filtersActive(f: CardFilters): boolean {
       f.mv ||
       f.power ||
       f.toughness ||
-      f.rarities.length,
+      f.rarities.length ||
+      f.commanderOnly,
   );
 }
 
@@ -115,6 +128,7 @@ export function matchesFilters(card: ScryCard, f: CardFilters): boolean {
     if (Number.isFinite(t) && (tg === null || !cmp(tg, f.toughnessOp, t))) return false;
   }
   if (f.rarities.length && !f.rarities.includes((card.rarity ?? "").toLowerCase())) return false;
+  if (f.commanderOnly && !canBeCommander(card)) return false;
   return true;
 }
 
@@ -167,11 +181,14 @@ export function FilterSidebar({
   onChange,
   sort,
   onSort,
+  rarityMissing,
 }: {
   filters: CardFilters;
   onChange: (f: CardFilters) => void;
   sort: CardSort;
   onSort: (s: CardSort) => void;
+  /** True when no card has rarity data (older import) — show a re-sync hint. */
+  rarityMissing?: boolean;
 }) {
   const set = (patch: Partial<CardFilters>) => onChange({ ...filters, ...patch });
   const toggle = (key: "types" | "colors" | "rarities", value: string) => {
@@ -202,6 +219,18 @@ export function FilterSidebar({
           className="w-full rounded-md border border-stone-700 bg-stone-900 px-2 py-1.5 text-xs outline-none focus:border-emerald-600"
         />
       </div>
+
+      <button
+        onClick={() => set({ commanderOnly: !filters.commanderOnly })}
+        className={`flex items-center gap-2 rounded-md px-2.5 py-2 text-xs font-semibold transition ${
+          filters.commanderOnly
+            ? "bg-amber-700 text-white"
+            : "border border-stone-700 bg-stone-900 text-stone-300 hover:bg-stone-800"
+        }`}
+        title="Only legendary creatures / cards that can be your commander"
+      >
+        👑 Can be commander
+      </button>
 
       <div>
         <div className="mb-1 text-[10px] font-bold tracking-wide text-stone-500 uppercase">Oracle text</div>
@@ -272,22 +301,20 @@ export function FilterSidebar({
         onOp={(mvOp) => set({ mvOp })}
         onValue={(mv) => set({ mv })}
       />
-      <div className="grid grid-cols-2 gap-2">
-        <NumberFilter
-          label="Power"
-          op={filters.powerOp}
-          value={filters.power}
-          onOp={(powerOp) => set({ powerOp })}
-          onValue={(power) => set({ power })}
-        />
-        <NumberFilter
-          label="Toughness"
-          op={filters.toughnessOp}
-          value={filters.toughness}
-          onOp={(toughnessOp) => set({ toughnessOp })}
-          onValue={(toughness) => set({ toughness })}
-        />
-      </div>
+      <NumberFilter
+        label="Power"
+        op={filters.powerOp}
+        value={filters.power}
+        onOp={(powerOp) => set({ powerOp })}
+        onValue={(power) => set({ power })}
+      />
+      <NumberFilter
+        label="Toughness"
+        op={filters.toughnessOp}
+        value={filters.toughness}
+        onOp={(toughnessOp) => set({ toughnessOp })}
+        onValue={(toughness) => set({ toughness })}
+      />
 
       <div>
         <div className="mb-1 text-[10px] font-bold tracking-wide text-stone-500 uppercase">Rarity</div>
@@ -306,6 +333,12 @@ export function FilterSidebar({
             </button>
           ))}
         </div>
+        {rarityMissing && (
+          <p className="mt-1 text-[10px] leading-snug text-amber-500/80">
+            No rarity data on these cards yet. Sync/re-sync the card database on “My decks,” then
+            reload — older imports get backfilled automatically.
+          </p>
+        )}
       </div>
 
       <div>

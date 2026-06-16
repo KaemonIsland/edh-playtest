@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { ScryCard } from "@/types";
 import { FINISH_LABEL, finishPrice, getRepo, type CollectionCard } from "@/lib/repo";
-import { collectionStats, setCollectionQty } from "@/lib/cards/collection";
+import { collectionStats, enrichCollectionFromOracle, setCollectionQty } from "@/lib/cards/collection";
 import { getCardDbStatus } from "@/lib/cards/carddb";
 import { cardComparator, type CardSort } from "@/lib/cards/sort";
 import { CardImage } from "@/components/cards/CardImage";
@@ -37,7 +37,11 @@ export default function CollectionPage() {
   const [importOpen, setImportOpen] = useState(false);
 
   const refresh = useCallback(async () => {
-    setCards(await getRepo().listCollection());
+    const list = await getRepo().listCollection();
+    setCards(list);
+    // Backfill rarity/keywords/release date on older rows (best-effort).
+    const enriched = await enrichCollectionFromOracle(list);
+    if (enriched !== list) setCards(enriched);
   }, []);
 
   useEffect(() => {
@@ -104,7 +108,7 @@ export default function CollectionPage() {
       {/* Header */}
       <div className="mx-auto w-full max-w-6xl px-4 pt-8">
         <nav className="mb-4 flex gap-4 text-xs text-stone-400">
-          <Link href="/" className="hover:text-white">Import</Link>
+          <Link href="/import" className="hover:text-white">Import</Link>
           <Link href="/decks" className="hover:text-white">My decks</Link>
           <span className="font-semibold text-stone-200">Collection</span>
         </nav>
@@ -193,7 +197,13 @@ export default function CollectionPage() {
         ) : (
           <>
             {showFilters && (
-              <FilterSidebar filters={filters} onChange={setFilters} sort={sort} onSort={setSort} />
+              <FilterSidebar
+                filters={filters}
+                onChange={setFilters}
+                sort={sort}
+                onSort={setSort}
+                rarityMissing={scopeCards.length > 0 && scopeCards.every((c) => c.card.rarity === undefined)}
+              />
             )}
             <div className="min-w-0 flex-1">
               <div className="mb-2 flex items-center gap-2">

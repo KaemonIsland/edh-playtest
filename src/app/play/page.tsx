@@ -34,7 +34,7 @@ export default function PlayPage() {
       <div className="flex h-dvh flex-col items-center justify-center gap-4 bg-[#08080a] text-stone-300">
         <p className="text-sm">No deck loaded yet.</p>
         <Link
-          href="/"
+          href="/import"
           className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-600"
         >
           Import a deck
