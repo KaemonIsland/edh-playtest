@@ -76,7 +76,25 @@ export function toScryCard(raw: RawCard): ScryCard {
     prices: raw.prices
       ? { usd: raw.prices.usd, usd_foil: raw.prices.usd_foil, eur: raw.prices.eur }
       : undefined,
+    set: raw.set,
+    set_name: raw.set_name,
+    collector_number: raw.collector_number,
   };
+}
+
+export interface CardRuling {
+  published_at: string;
+  comment: string;
+}
+
+/** Official rulings for a printing id. */
+export async function fetchRulings(cardId: string): Promise<CardRuling[]> {
+  const res = await throttled(() =>
+    fetch(`${SCRYFALL}/cards/${encodeURIComponent(cardId)}/rulings`, { headers: HEADERS }),
+  );
+  if (!res.ok) return [];
+  const data = (await res.json()) as { data: { published_at: string; comment: string }[] };
+  return data.data.map((r) => ({ published_at: r.published_at, comment: r.comment }));
 }
 
 export interface ResolveResult {

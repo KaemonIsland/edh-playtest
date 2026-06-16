@@ -73,6 +73,9 @@ function slim(raw: RawCard): ScryCard {
       : undefined,
     legalities: { commander: raw.legalities?.commander },
     prices: raw.prices ? { usd: raw.prices.usd } : undefined,
+    set: raw.set,
+    set_name: raw.set_name,
+    collector_number: raw.collector_number,
   };
 }
 

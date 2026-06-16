@@ -37,10 +37,10 @@ export function SettingsPanel() {
   );
 
   const SIZE_PRESETS = [
-    { label: "Small", value: 80 },
-    { label: "Default", value: 100 },
-    { label: "Large", value: 120 },
-    { label: "X-Large", value: 145 },
+    { label: "Small", value: 90 },
+    { label: "Default", value: 120 },
+    { label: "Large", value: 160 },
+    { label: "X-Large", value: 200 },
   ];
 
   const LAYOUTS = [
@@ -99,7 +99,7 @@ export function SettingsPanel() {
             <input
               type="range"
               min={70}
-              max={160}
+              max={200}
               step={5}
               value={prefs.cardSize}
               onChange={(e) => setPref("cardSize", parseInt(e.target.value, 10))}

@@ -90,6 +90,10 @@ export interface GameStore extends GameCore {
   loadDeck: (deck: Deck) => void;
   loadBotDecks: (decks: Deck[]) => void;
   startGame: () => void;
+  /** Add an opponent mid-game (live setup). Returns the new player id or null. */
+  addOpponent: (deck: Deck) => string | null;
+  /** Remove an opponent and all their cards mid-game. */
+  removeOpponent: (playerId: string) => void;
   mulligan: () => void;
   /** Finish a London mulligan: bottom the given hand cards. */
   bottomCards: (instanceIds: string[]) => void;
@@ -410,6 +414,69 @@ export const useGameStore = create<GameStore>((set, get) => {
             : `Game started with "${deck.name}" — drew opening 7.`,
       });
       set({ ...core, started: true, history: [], future: [] });
+    },
+
+    addOpponent: (deck) => {
+      const s = get();
+      const used = new Set(s.playerOrder.filter(isBotId));
+      let newId: string | null = null;
+      for (let i = 1; i <= MAX_OPPONENTS; i++) {
+        if (!used.has(`bot${i}`)) {
+          newId = `bot${i}`;
+          break;
+        }
+      }
+      if (!newId) return null;
+      const playerId = newId;
+
+      // Register the deck's cards, persist to botDecks.
+      const cards = { ...s.cards };
+      for (const entry of deck.entries) cards[entry.card.id] = entry.card;
+      for (const cmd of deck.commanders) cards[cmd.id] = cmd;
+      set({ cards, botDecks: [...s.botDecks, deck] });
+
+      mutate((core) => {
+        setupPlayer(core, deck, playerId, deck.name);
+        pushLog(core, PLAYER_ID, {
+          type: "game",
+          message: `Added opponent "${deck.name}" (${playerId}). They drew 7.`,
+        });
+      });
+      return playerId;
+    },
+
+    removeOpponent: (playerId) => {
+      const s = get();
+      if (!isBotId(playerId) || !s.players[playerId]) return;
+      const name = s.players[playerId]?.name ?? playerId;
+      // Drop the matching botDeck (by order among bots).
+      const botIds = s.playerOrder.filter(isBotId);
+      const deckIndex = botIds.indexOf(playerId);
+      const botDecks =
+        deckIndex >= 0 ? s.botDecks.filter((_, i) => i !== deckIndex) : s.botDecks;
+      set({ botDecks });
+
+      mutate((core) => {
+        for (const [iid, inst] of Object.entries(core.instances)) {
+          if (inst.ownerId === playerId) {
+            // Detach any cards this player's permanents host/attach to.
+            if (inst.attachedTo && core.instances[inst.attachedTo]) {
+              core.instances[inst.attachedTo]!.attachments = core.instances[
+                inst.attachedTo
+              ]!.attachments.filter((a) => a !== iid);
+            }
+            delete core.instances[iid];
+          }
+        }
+        delete core.players[playerId];
+        delete core.zoneOrder[playerId];
+        core.playerOrder = core.playerOrder.filter((p) => p !== playerId);
+        if (core.activePlayerId === playerId) core.activePlayerId = PLAYER_ID;
+        pushLog(core, PLAYER_ID, {
+          type: "game",
+          message: `Removed opponent "${name}".`,
+        });
+      });
     },
 
     mulligan: () =>

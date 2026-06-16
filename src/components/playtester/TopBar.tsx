@@ -44,6 +44,7 @@ export function TopBar() {
       onClick: () => startBottoming(mulligans),
     },
     { label: "", separator: true },
+    { label: "Manage opponents…", onClick: () => openModal({ kind: "opponents" }) },
     { label: "End & log this game…", onClick: () => openModal({ kind: "loggame" }) },
     {
       label: "View deck showcase",

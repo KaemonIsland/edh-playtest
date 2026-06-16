@@ -52,7 +52,11 @@ export interface ScryCard {
   card_faces?: ScryCardFace[];
   image_uris?: ScryImageUris;
   legalities: Partial<Record<string, Legality>>;
+  /** USD prices are TCGplayer market prices (Scryfall's source). */
   prices?: { usd?: string | null; usd_foil?: string | null; eur?: string | null };
+  set?: string;
+  set_name?: string;
+  collector_number?: string;
 }
 
 // ---------------------------------------------------------------------------

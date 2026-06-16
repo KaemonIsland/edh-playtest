@@ -72,7 +72,14 @@ function ZonePile({
             if (n) g.mill(n);
           },
         },
-        { label: "Reveal top card", onClick: () => g.revealTop() },
+        {
+          label: "Reveal top card",
+          onClick: () => {
+            g.revealTop();
+            const topId = useGameStore.getState().zoneOrder[PLAYER_ID]?.library[0];
+            if (topId) useUiStore.getState().setRevealed(topId);
+          },
+        },
         { label: "Shuffle", onClick: () => g.shuffleLibrary() },
       ];
     }
@@ -101,46 +108,89 @@ function ZonePile({
           ⋮
         </button>
       </div>
-      <button
-        className="relative"
-        onClick={() =>
-          openModal({
-            kind: "browse",
-            zone,
-            title: label,
-            shuffleAfter: zone === "library",
-            playerId: PLAYER_ID,
-          })
-        }
-        onContextMenu={(e) => {
-          e.preventDefault();
-          if (topVisible && topId) openMenu(e.clientX, e.clientY, buildCardMenu(topId));
-          else openMenu(e.clientX, e.clientY, zoneMenu());
-        }}
-        onMouseEnter={() => {
-          if (topVisible && topInst)
-            setPreview({ card: topCard, tokenSpec: topInst.tokenSpec, flipped: topInst.flipped });
-        }}
-        onMouseLeave={() => setPreview(null)}
-        title={`Browse ${label.toLowerCase()}`}
-      >
-        {ids.length === 0 ? (
-          <div className="flex h-[112px] w-[80px] items-center justify-center rounded-md border border-dashed border-stone-700 text-[10px] text-stone-600">
-            empty
-          </div>
-        ) : (
-          <CardImage
-            card={topVisible ? topCard : undefined}
-            tokenSpec={topVisible ? topInst?.tokenSpec : undefined}
-            flipped={topVisible ? (topInst?.flipped ?? 0) : 0}
-            faceDown={!topVisible}
-            className="h-[112px] w-[80px]"
-          />
-        )}
-        <span className="absolute -right-1.5 -bottom-1.5 rounded-full bg-stone-700 px-1.5 py-0.5 text-[10px] font-bold text-stone-100 shadow">
-          {ids.length}
-        </span>
-      </button>
+      {ids.length === 0 ? (
+        <div
+          className="relative flex h-[112px] w-[80px] cursor-pointer items-center justify-center rounded-md border border-dashed border-stone-700 text-[10px] text-stone-600"
+          onClick={() =>
+            openModal({ kind: "browse", zone, title: label, shuffleAfter: zone === "library", playerId: PLAYER_ID })
+          }
+        >
+          empty
+        </div>
+      ) : (
+        <PileTop
+          instanceId={topId!}
+          zone={zone}
+          topVisible={topVisible}
+          card={topCard}
+          inst={topInst}
+          count={ids.length}
+          onBrowse={() =>
+            openModal({ kind: "browse", zone, title: label, shuffleAfter: zone === "library", playerId: PLAYER_ID })
+          }
+          onContext={(x, y) =>
+            topVisible ? openMenu(x, y, buildCardMenu(topId!)) : openMenu(x, y, zoneMenu())
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+/** Top card of a pile: draggable (library/grave/exile → drag to draw/move). */
+function PileTop({
+  instanceId,
+  zone,
+  topVisible,
+  card,
+  inst,
+  count,
+  onBrowse,
+  onContext,
+}: {
+  instanceId: string;
+  zone: Zone;
+  topVisible: boolean;
+  card: ReturnType<typeof useGameStore.getState>["cards"][string] | undefined;
+  inst: ReturnType<typeof useGameStore.getState>["instances"][string] | undefined;
+  count: number;
+  onBrowse: () => void;
+  onContext: (x: number, y: number) => void;
+}) {
+  const setPreview = useUiStore((s) => s.setPreview);
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: instanceId,
+    data: { zone },
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      className="relative cursor-grab touch-none"
+      style={{ opacity: isDragging ? 0.3 : 1 }}
+      onClick={onBrowse}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onContext(e.clientX, e.clientY);
+      }}
+      onMouseEnter={() => {
+        if (topVisible && inst)
+          setPreview({ card, tokenSpec: inst.tokenSpec, flipped: inst.flipped });
+      }}
+      onMouseLeave={() => setPreview(null)}
+      title={zone === "library" ? "Drag to draw, click to browse" : "Drag to move, click to browse"}
+    >
+      <CardImage
+        card={topVisible ? card : undefined}
+        tokenSpec={topVisible ? inst?.tokenSpec : undefined}
+        flipped={topVisible ? (inst?.flipped ?? 0) : 0}
+        faceDown={!topVisible}
+        className="h-[112px] w-[80px]"
+      />
+      <span className="absolute -right-1.5 -bottom-1.5 rounded-full bg-stone-700 px-1.5 py-0.5 text-[10px] font-bold text-stone-100 shadow">
+        {count}
+      </span>
     </div>
   );
 }

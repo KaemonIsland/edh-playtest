@@ -28,6 +28,8 @@ interface CardImageProps {
   faceDown?: boolean;
   className?: string;
   style?: React.CSSProperties;
+  /** "cover" fills (may crop edges); "contain" shows the whole card. */
+  fit?: "cover" | "contain";
 }
 
 /** Renders one card visual: Scryfall image, custom-token frame, or card back. */
@@ -37,6 +39,7 @@ export const CardImage = memo(function CardImage({
   flipped = 0,
   faceDown = false,
   className = "",
+  fit = "cover",
   style,
 }: CardImageProps) {
   if (faceDown) {
@@ -62,7 +65,7 @@ export const CardImage = memo(function CardImage({
         draggable={false}
         loading="lazy"
         style={style}
-        className={`rounded-[5%] object-cover select-none ${className}`}
+        className={`rounded-[5%] select-none ${fit === "contain" ? "object-contain" : "object-cover"} ${className}`}
       />
     );
   }

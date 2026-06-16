@@ -21,6 +21,7 @@ import { HoverPreview } from "@/components/cards/HoverPreview";
 import { Battlefield } from "./Battlefield";
 import { OpponentBoard } from "./OpponentBoard";
 import { BotPrompt } from "./BotPrompt";
+import { RevealOverlay } from "./RevealOverlay";
 import { HandFan } from "./HandFan";
 import { ZonePiles } from "./ZonePiles";
 import { TopBar } from "./TopBar";
@@ -35,6 +36,7 @@ import { KeybindsPanel } from "./modals/KeybindsPanel";
 import { SnapshotsPanel } from "./modals/SnapshotsPanel";
 import { SettingsPanel } from "./modals/SettingsPanel";
 import { LogGameModal } from "./modals/LogGameModal";
+import { OpponentsModal } from "./modals/OpponentsModal";
 
 const DROP_ZONES: Zone[] = ["battlefield", "hand", "library", "graveyard", "exile", "command"];
 const GRID = 20;
@@ -216,6 +218,7 @@ export function PlaytesterRoot() {
       <HoverPreview />
       <ContextMenu />
       <BotPrompt />
+      <RevealOverlay />
 
       <DragOverlay dropAnimation={null}>
         {dragInst && (
@@ -224,6 +227,7 @@ export function PlaytesterRoot() {
             tokenSpec={dragInst.tokenSpec}
             flipped={dragInst.flipped}
             faceDown={dragInst.faceDown && dragInst.zone !== "hand"}
+            fit="contain"
             className="rotate-3 shadow-2xl shadow-black"
             style={{ width: g.prefs.cardSize, height: Math.round(g.prefs.cardSize * 1.4) }}
           />
@@ -245,6 +249,7 @@ export function PlaytesterRoot() {
       {ui.modal.kind === "snapshots" && <SnapshotsPanel />}
       {ui.modal.kind === "settings" && <SettingsPanel />}
       {ui.modal.kind === "loggame" && <LogGameModal />}
+      {ui.modal.kind === "opponents" && <OpponentsModal />}
     </DndContext>
   );
 }

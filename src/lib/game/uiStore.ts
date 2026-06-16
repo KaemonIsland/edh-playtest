@@ -31,7 +31,8 @@ export type ModalKind =
   | { kind: "keybinds" }
   | { kind: "snapshots" }
   | { kind: "settings" }
-  | { kind: "loggame" };
+  | { kind: "loggame" }
+  | { kind: "opponents" };
 
 interface PreviewCard {
   card?: ScryCard;
@@ -58,6 +59,8 @@ interface UiStore {
   viewedOpponent: string | null;
   /** Collapse the opponent board down to its summary strip. */
   opponentCollapsed: boolean;
+  /** Instance id of a card being shown full-screen (reveal top of library). */
+  revealedInstanceId: string | null;
 
   openModal: (modal: ModalKind) => void;
   closeModal: () => void;
@@ -74,6 +77,7 @@ interface UiStore {
   setAttachSource: (instanceId: string | null) => void;
   setSelected: (ids: string[]) => void;
   clearSelected: () => void;
+  setRevealed: (instanceId: string | null) => void;
   setViewedOpponent: (playerId: string | null) => void;
   setOpponentCollapsed: (collapsed: boolean) => void;
 }
@@ -91,6 +95,7 @@ export const useUiStore = create<UiStore>((set, get) => ({
   selected: [],
   viewedOpponent: null,
   opponentCollapsed: false,
+  revealedInstanceId: null,
 
   openModal: (modal) => set({ modal, menu: null }),
   closeModal: () => set({ modal: { kind: "none" } }),
@@ -117,6 +122,7 @@ export const useUiStore = create<UiStore>((set, get) => ({
   setAttachSource: (instanceId) => set({ attachSource: instanceId }),
   setSelected: (ids) => set({ selected: ids }),
   clearSelected: () => set({ selected: [] }),
+  setRevealed: (revealedInstanceId) => set({ revealedInstanceId }),
   setViewedOpponent: (viewedOpponent) => set({ viewedOpponent }),
   setOpponentCollapsed: (opponentCollapsed) => set({ opponentCollapsed }),
 }));

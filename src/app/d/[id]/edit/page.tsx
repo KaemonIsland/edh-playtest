@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -16,9 +16,15 @@ import {
 import type { CategorySetting, Deck, DeckEntry, ScryCard } from "@/types";
 import { getRepo, type VersionChange } from "@/lib/repo";
 import { groupEntries, typeGroup } from "@/lib/deck/stats";
-import { searchCards, fetchPrintings, getCardDbStatus } from "@/lib/cards/carddb";
+import { searchCards, getCardDbStatus } from "@/lib/cards/carddb";
 import { CardImage } from "@/components/cards/CardImage";
 import { ManaCost } from "@/components/cards/ManaCost";
+import { CardSearchModal } from "@/components/builder/CardSearchModal";
+import { CardDetailModal } from "@/components/builder/CardDetailModal";
+
+type ViewMode = "stacks" | "text";
+const VIEW_KEY = "edh-playtest:builder-view";
+const COMMANDER_DROP = "cat:__commander__";
 
 /** Diff two decks by card name for the auto changelog entry. */
 function diffDecks(before: Deck, after: Deck): { adds: VersionChange[]; cuts: VersionChange[] } {
@@ -38,34 +44,20 @@ function diffDecks(before: Deck, after: Deck): { adds: VersionChange[]; cuts: Ve
   }
   for (const [name, qty] of a) {
     const next = b.get(name) ?? 0;
-    if (qty < next || next < qty) {
-      if (next < qty) cuts.push({ name: qty - next > 1 ? `${qty - next}x ${name}` : name });
-    }
+    if (next < qty) cuts.push({ name: qty - next > 1 ? `${qty - next}x ${name}` : name });
   }
   return { adds, cuts };
 }
 
-function EntryRow({
-  entry,
-  selected,
-  onSelect,
-}: {
-  entry: DeckEntry;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: entry.card.id,
-  });
+function TextRow({ entry, onOpen }: { entry: DeckEntry; onOpen: () => void }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: entry.card.id });
   return (
     <button
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      onClick={onSelect}
-      className={`flex w-full cursor-grab items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs transition ${
-        selected ? "bg-sky-900/50 text-white ring-1 ring-sky-600" : "text-stone-300 hover:bg-stone-800"
-      }`}
+      onClick={onOpen}
+      className="flex w-full cursor-grab items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs text-stone-300 transition hover:bg-stone-800"
       style={{ opacity: isDragging ? 0.3 : 1 }}
     >
       <span className="w-4 shrink-0 text-stone-600">{entry.quantity}</span>
@@ -75,22 +67,60 @@ function EntryRow({
   );
 }
 
+/** Archidekt-style stack: overlapping card images, hover lifts a card. */
+function StackCard({ entry, onOpen }: { entry: DeckEntry; onOpen: () => void }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: entry.card.id });
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      onClick={onOpen}
+      className="relative h-10 cursor-grab overflow-visible transition-[z-index] hover:z-30"
+      style={{ opacity: isDragging ? 0.3 : 1 }}
+      title={entry.card.name}
+    >
+      <CardImage
+        card={entry.card}
+        className="w-full shadow-md shadow-black/60 hover:ring-2 hover:ring-stone-500"
+      />
+      {entry.quantity > 1 && (
+        <span className="absolute top-1 left-1 z-10 rounded-full bg-black/80 px-1.5 text-[10px] font-bold text-white">
+          ×{entry.quantity}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function DropHint() {
+  return (
+    <div className="rounded border border-dashed border-stone-800 px-2 py-3 text-center text-[10px] text-stone-700">
+      drop cards here
+    </div>
+  );
+}
+
 function CategoryColumn({
   name,
+  dropId,
   entries,
   setting,
-  selectedId,
-  onSelect,
+  viewMode,
+  accent,
+  onOpen,
   onToggleSetting,
 }: {
   name: string;
+  dropId: string;
   entries: DeckEntry[];
   setting: CategorySetting | undefined;
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-  onToggleSetting: (key: keyof CategorySetting) => void;
+  viewMode: ViewMode;
+  accent?: "commander";
+  onOpen: (card: ScryCard) => void;
+  onToggleSetting?: (key: keyof CategorySetting) => void;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `cat:${name}` });
+  const { setNodeRef, isOver } = useDroppable({ id: dropId });
   const count = entries.reduce((n, e) => n + e.quantity, 0);
   const inDeck = setting?.inDeck !== false;
   const inPrice = setting?.inPrice !== false;
@@ -99,33 +129,39 @@ function CategoryColumn({
   return (
     <div
       ref={setNodeRef}
-      className={`flex w-60 shrink-0 flex-col rounded-lg border p-2 transition-colors ${
+      className={`flex flex-col rounded-lg border p-2 transition-colors ${
         isOver
           ? "border-emerald-600/70 bg-emerald-950/20"
-          : inDeck
-            ? "border-stone-800 bg-stone-950"
-            : "border-stone-800 bg-stone-950/50 opacity-80"
+          : accent === "commander"
+            ? "border-amber-800/50 bg-amber-950/10"
+            : inDeck
+              ? "border-stone-800 bg-stone-950"
+              : "border-stone-800 bg-stone-950/50 opacity-80"
       }`}
     >
       <div className="relative mb-1.5 flex items-center justify-between px-1">
-        <span className="truncate text-xs font-bold text-emerald-500">
+        <span
+          className={`truncate text-xs font-bold ${accent === "commander" ? "text-amber-400" : "text-emerald-500"}`}
+        >
           {name} <span className="font-normal text-stone-600">({count})</span>
         </span>
         <div className="flex items-center gap-1">
-          {!inDeck && (
+          {!inDeck && accent !== "commander" && (
             <span className="rounded bg-stone-800 px-1 text-[8px] font-bold tracking-wide text-stone-500 uppercase">
               not in deck
             </span>
           )}
-          <button
-            onClick={() => setMenuOpen(!menuOpen)}
-            className="rounded px-1 text-stone-500 hover:bg-stone-800 hover:text-stone-200"
-          >
-            ⋮
-          </button>
+          {onToggleSetting && (
+            <button
+              onClick={() => setMenuOpen(!menuOpen)}
+              className="rounded px-1 text-stone-500 hover:bg-stone-800 hover:text-stone-200"
+            >
+              ⋮
+            </button>
+          )}
         </div>
-        {menuOpen && (
-          <div className="absolute top-6 right-0 z-30 w-48 rounded-lg border border-stone-700 bg-stone-900 py-1 shadow-2xl">
+        {menuOpen && onToggleSetting && (
+          <div className="absolute top-6 right-0 z-40 w-48 rounded-lg border border-stone-700 bg-stone-900 py-1 shadow-2xl">
             <button
               onClick={() => {
                 onToggleSetting("inDeck");
@@ -147,21 +183,22 @@ function CategoryColumn({
           </div>
         )}
       </div>
-      <div className="flex min-h-10 flex-col gap-0.5 overflow-y-auto">
-        {entries.map((e) => (
-          <EntryRow
-            key={e.card.id}
-            entry={e}
-            selected={selectedId === e.card.id}
-            onSelect={() => onSelect(e.card.id)}
-          />
-        ))}
-        {entries.length === 0 && (
-          <div className="rounded border border-dashed border-stone-800 px-2 py-3 text-center text-[10px] text-stone-700">
-            drop cards here
-          </div>
-        )}
-      </div>
+
+      {viewMode === "text" ? (
+        <div className="flex min-h-8 flex-col gap-0.5">
+          {entries.map((e) => (
+            <TextRow key={e.card.id} entry={e} onOpen={() => onOpen(e.card)} />
+          ))}
+          {entries.length === 0 && <DropHint />}
+        </div>
+      ) : (
+        <div className="flex min-h-8 flex-col pb-[120%]">
+          {entries.map((e) => (
+            <StackCard key={e.card.id} entry={e} onOpen={() => onOpen(e.card)} />
+          ))}
+          {entries.length === 0 && <DropHint />}
+        </div>
+      )}
     </div>
   );
 }
@@ -171,10 +208,11 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
   const router = useRouter();
   const [original, setOriginal] = useState<Deck | null>(null);
   const [draft, setDraft] = useState<Deck | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detailCard, setDetailCard] = useState<ScryCard | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>("stacks");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ScryCard[]>([]);
-  const [printings, setPrintings] = useState<ScryCard[] | null>(null);
+  const [searchModal, setSearchModal] = useState<string | null>(null);
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveTitle, setSaveTitle] = useState("");
   const [saving, setSaving] = useState(false);
@@ -182,6 +220,12 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
   const searchTimer = useRef<number | null>(null);
 
   useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(VIEW_KEY);
+      if (saved === "text" || saved === "stacks") setViewMode(saved);
+    } catch {
+      // ignore
+    }
     void getRepo()
       .getDeck(id)
       .then((d) => {
@@ -195,6 +239,15 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
       });
   }, [id]);
 
+  const setView = (mode: ViewMode) => {
+    setViewMode(mode);
+    try {
+      window.localStorage.setItem(VIEW_KEY, mode);
+    } catch {
+      // ignore
+    }
+  };
+
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   const dirty = useMemo(
@@ -203,13 +256,10 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
   );
 
   const groups = useMemo(() => (draft ? groupEntries(draft) : []), [draft]);
-  const selectedEntry = draft?.entries.find((e) => e.card.id === selectedId) ?? null;
-  const allCategories = useMemo(() => {
-    const names = new Set<string>(groups.map((g) => g.group));
-    names.add("Sideboard");
-    names.add("Maybeboard");
-    return [...names].sort();
-  }, [groups]);
+  const commanderEntries = useMemo(
+    () => draft?.entries.filter((e) => e.isCommander) ?? [],
+    [draft],
+  );
 
   const update = (fn: (d: Deck) => void) => {
     setDraft((prev) => {
@@ -220,7 +270,7 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
     });
   };
 
-  // Debounced card search
+  // Debounced quick-search dropdown
   useEffect(() => {
     if (searchTimer.current) window.clearTimeout(searchTimer.current);
     if (query.trim().length < 2) {
@@ -228,7 +278,7 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
       return;
     }
     searchTimer.current = window.setTimeout(() => {
-      void searchCards(query).then(setResults);
+      void searchCards(query, 8).then(setResults);
     }, 250);
   }, [query]);
 
@@ -240,30 +290,42 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
     );
   }
 
-  const addCard = (card: ScryCard) => {
-    update((d) => {
-      const existing = d.entries.find((e) => e.card.oracle_id === card.oracle_id && !e.isCommander);
-      if (existing) existing.quantity += 1;
-      else d.entries.push({ card, quantity: 1, isCommander: false, categories: [] });
-    });
-    setSelectedId(card.id);
-    setQuery("");
-    setResults([]);
-  };
-
   const onDragEnd = (e: DragEndEvent) => {
     setDragName(null);
     const overId = e.over?.id ? String(e.over.id) : null;
     if (!overId?.startsWith("cat:")) return;
-    const category = overId.slice(4);
     const cardId = String(e.active.id);
+
+    if (overId === COMMANDER_DROP) {
+      update((d) => {
+        const entry = d.entries.find((x) => x.card.id === cardId);
+        if (!entry) return;
+        entry.isCommander = true;
+        d.commanders = d.entries.filter((x) => x.isCommander).map((x) => x.card);
+        d.colorIdentity = [...new Set(d.commanders.flatMap((c) => c.color_identity))];
+      });
+      return;
+    }
+
+    const category = overId.slice(4);
     update((d) => {
       const entry = d.entries.find((x) => x.card.id === cardId);
       if (!entry) return;
-      // Premier category = first; type-group columns mean "no explicit category".
-      const isTypeGroup = d.entries.every(() => true) && category === typeGroup(entry.card);
-      entry.categories = isTypeGroup ? [] : [category, ...entry.categories.filter((c) => c !== category)];
-      if (!isTypeGroup && d.categorySettings?.[category] === undefined && (category === "Sideboard" || category === "Maybeboard")) {
+      // Moving out of the commander column happens by dropping elsewhere.
+      if (entry.isCommander) {
+        entry.isCommander = false;
+        d.commanders = d.entries.filter((x) => x.isCommander).map((x) => x.card);
+        d.colorIdentity = [...new Set(d.commanders.flatMap((c) => c.color_identity))];
+      }
+      const isTypeGroup = category === typeGroup(entry.card);
+      entry.categories = isTypeGroup
+        ? []
+        : [category, ...entry.categories.filter((c) => c !== category)];
+      if (
+        !isTypeGroup &&
+        d.categorySettings?.[category] === undefined &&
+        (category === "Sideboard" || category === "Maybeboard")
+      ) {
         d.categorySettings = { ...d.categorySettings, [category]: { inDeck: false, inPrice: false } };
       }
     });
@@ -302,6 +364,15 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
 
   const diff = original ? diffDecks(original, draft) : { adds: [], cuts: [] };
   const cardDb = getCardDbStatus();
+  // Excluded categories (sideboard/maybeboard/anything marked not-in-deck) go
+  // on the right rail; the rest stay in the main deck grid.
+  const inDeckGroups = groups.filter((gp) => gp.inDeck);
+  const excludedGroups = groups.filter((gp) => !gp.inDeck);
+  // Empty board columns only appear as drop targets while dragging.
+  const boardColumns = (["Sideboard", "Maybeboard"] as const).filter(
+    (b) => !groups.some((g) => g.group === b) && dragName !== null,
+  );
+  const showCommanderColumn = commanderEntries.length > 0 || dragName !== null;
 
   return (
     <DndContext
@@ -321,22 +392,43 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
           <input
             value={draft.name}
             onChange={(e) => update((d) => void (d.name = e.target.value))}
-            className="w-56 rounded-md border border-stone-800 bg-stone-900 px-2.5 py-1.5 text-sm font-bold outline-none focus:border-emerald-600"
+            className="w-48 rounded-md border border-stone-800 bg-stone-900 px-2.5 py-1.5 text-sm font-bold outline-none focus:border-emerald-600"
           />
           <span className="text-[11px] text-stone-500">
-            {draft.entries.reduce((n, e) => n + (e.isCommander ? 0 : e.quantity), 0)} cards +{" "}
+            {draft.entries.reduce((n, e) => n + (e.isCommander ? 0 : e.quantity), 0)} +{" "}
             {draft.commanders.length} cmdr
           </span>
 
-          {/* Search to add */}
-          <div className="relative ml-2 min-w-64 flex-1">
+          {/* View toggle */}
+          <div className="flex gap-0.5 rounded-lg bg-stone-900 p-0.5">
+            {(["stacks", "text"] as const).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setView(mode)}
+                className={`rounded-md px-2.5 py-1 text-[11px] font-semibold capitalize transition ${
+                  viewMode === mode ? "bg-stone-700 text-white" : "text-stone-500 hover:text-stone-300"
+                }`}
+              >
+                {mode === "stacks" ? "🂠 Stacks" : "≡ Text"}
+              </button>
+            ))}
+          </div>
+
+          {/* Quick search — Enter opens the full search modal */}
+          <div className="relative ml-1 min-w-56 flex-1">
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  setSearchModal(query);
+                  setResults([]);
+                }
+              }}
               placeholder={
                 cardDb.syncedAt
-                  ? `Add a card (local DB: ${cardDb.count.toLocaleString()} cards)…`
-                  : "Add a card (Scryfall search — sync the card DB on /decks for offline)…"
+                  ? "Add a card — Enter for full search…"
+                  : "Add a card (Scryfall) — Enter for full search…"
               }
               className="w-full rounded-md border border-stone-700 bg-stone-900 px-3 py-1.5 text-xs outline-none focus:border-emerald-600"
             />
@@ -345,7 +437,11 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
                 {results.map((card) => (
                   <button
                     key={card.id}
-                    onClick={() => addCard(card)}
+                    onClick={() => {
+                      setDetailCard(card);
+                      setQuery("");
+                      setResults([]);
+                    }}
                     className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-stone-200 hover:bg-stone-800"
                   >
                     <span className="min-w-0 flex-1 truncate">{card.name}</span>
@@ -355,16 +451,31 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
                     </span>
                   </button>
                 ))}
+                <button
+                  onClick={() => {
+                    setSearchModal(query);
+                    setResults([]);
+                  }}
+                  className="block w-full border-t border-stone-800 px-3 py-1.5 text-left text-[11px] font-semibold text-sky-400 hover:bg-stone-800"
+                >
+                  ⏎ Full search for “{query}”…
+                </button>
               </div>
             )}
           </div>
+          <button
+            onClick={() => setSearchModal(query)}
+            className="rounded-md border border-stone-700 bg-stone-900 px-3 py-1.5 text-xs font-semibold text-stone-300 hover:bg-stone-800"
+          >
+            🔍 Advanced
+          </button>
 
           <div className="ml-auto flex items-center gap-2">
             {dirty && <span className="text-[10px] font-bold text-amber-400">● unsaved</span>}
             <button
               onClick={() => {
                 setDraft(structuredClone(original));
-                setSelectedId(null);
+                setDetailCard(null);
               }}
               disabled={!dirty}
               className="rounded-md bg-stone-800 px-3 py-1.5 text-xs font-semibold text-stone-300 hover:bg-stone-700 disabled:opacity-40"
@@ -384,208 +495,67 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
           </div>
         </header>
 
+        {/* Deck columns on the left (wrap H+V); excluded boards on a right rail. */}
         <div className="flex min-h-0 flex-1">
-          {/* Category stacks */}
-          <main className="flex flex-1 items-start gap-3 overflow-auto p-3">
-            {groups.map(({ group, entries }) => (
+          <main
+            className="grid flex-1 content-start items-start gap-3 overflow-y-auto p-3"
+            style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}
+          >
+            {showCommanderColumn && (
+              <CategoryColumn
+                name="Commander"
+                dropId={COMMANDER_DROP}
+                entries={commanderEntries}
+                setting={undefined}
+                viewMode={viewMode}
+                accent="commander"
+                onOpen={setDetailCard}
+              />
+            )}
+            {inDeckGroups.map(({ group, entries }) => (
               <CategoryColumn
                 key={group}
                 name={group}
+                dropId={`cat:${group}`}
                 entries={entries}
                 setting={draft.categorySettings?.[group]}
-                selectedId={selectedId}
-                onSelect={setSelectedId}
+                viewMode={viewMode}
+                onOpen={setDetailCard}
                 onToggleSetting={(key) => toggleSetting(group, key)}
               />
             ))}
-            {/* Always-available board columns */}
-            {(["Sideboard", "Maybeboard"] as const)
-              .filter((b) => !groups.some((g) => g.group === b))
-              .map((b) => (
+          </main>
+
+          {/* Right rail: sideboard / maybeboard / any "not in deck" category */}
+          {(excludedGroups.length > 0 || boardColumns.length > 0) && (
+            <aside className="flex w-60 shrink-0 flex-col gap-3 overflow-y-auto border-l border-stone-800 bg-stone-950/60 p-3">
+              <div className="text-[10px] font-bold tracking-wide text-stone-500 uppercase">
+                Not in deck
+              </div>
+              {excludedGroups.map(({ group, entries }) => (
+                <CategoryColumn
+                  key={group}
+                  name={group}
+                  dropId={`cat:${group}`}
+                  entries={entries}
+                  setting={draft.categorySettings?.[group]}
+                  viewMode={viewMode}
+                  onOpen={setDetailCard}
+                  onToggleSetting={(key) => toggleSetting(group, key)}
+                />
+              ))}
+              {boardColumns.map((b) => (
                 <CategoryColumn
                   key={b}
                   name={b}
+                  dropId={`cat:${b}`}
                   entries={[]}
                   setting={draft.categorySettings?.[b] ?? { inDeck: false, inPrice: false }}
-                  selectedId={selectedId}
-                  onSelect={setSelectedId}
+                  viewMode={viewMode}
+                  onOpen={setDetailCard}
                   onToggleSetting={(key) => toggleSetting(b, key)}
                 />
               ))}
-          </main>
-
-          {/* Card detail editor */}
-          {selectedEntry && (
-            <aside className="flex w-72 shrink-0 flex-col gap-3 overflow-y-auto border-l border-stone-800 bg-stone-950 p-3">
-              <CardImage card={selectedEntry.card} className="aspect-[5/7] w-full" />
-              <div>
-                <div className="text-sm font-bold text-stone-100">{selectedEntry.card.name}</div>
-                <div className="text-[11px] text-stone-500">{selectedEntry.card.type_line}</div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold tracking-wide text-stone-500 uppercase">Qty</span>
-                <button
-                  onClick={() =>
-                    update((d) => {
-                      const e = d.entries.find((x) => x.card.id === selectedEntry.card.id);
-                      if (e) e.quantity = Math.max(1, e.quantity - 1);
-                    })
-                  }
-                  className="h-7 w-7 rounded bg-stone-800 text-stone-300 hover:bg-stone-700"
-                >
-                  −
-                </button>
-                <span className="min-w-6 text-center text-sm font-bold">{selectedEntry.quantity}</span>
-                <button
-                  onClick={() =>
-                    update((d) => {
-                      const e = d.entries.find((x) => x.card.id === selectedEntry.card.id);
-                      if (e) e.quantity += 1;
-                    })
-                  }
-                  className="h-7 w-7 rounded bg-stone-800 text-stone-300 hover:bg-stone-700"
-                >
-                  +
-                </button>
-                <button
-                  onClick={() => {
-                    update((d) => {
-                      d.entries = d.entries.filter((x) => x.card.id !== selectedEntry.card.id);
-                    });
-                    setSelectedId(null);
-                  }}
-                  className="ml-auto rounded bg-stone-800 px-2 py-1 text-[11px] font-semibold text-rose-400 hover:bg-stone-700"
-                >
-                  🗑 Remove
-                </button>
-              </div>
-
-              {/* Categories */}
-              <div>
-                <div className="mb-1 text-[10px] font-bold tracking-wide text-stone-500 uppercase">
-                  Categories (first = premier)
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {selectedEntry.categories.map((cat, i) => (
-                    <span
-                      key={cat}
-                      className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] ${
-                        i === 0 ? "bg-emerald-900/70 text-emerald-200" : "bg-stone-800 text-stone-300"
-                      }`}
-                    >
-                      {i === 0 && "★ "}
-                      {cat}
-                      <button
-                        onClick={() =>
-                          update((d) => {
-                            const e = d.entries.find((x) => x.card.id === selectedEntry.card.id);
-                            if (e) e.categories = e.categories.filter((c) => c !== cat);
-                          })
-                        }
-                        className="text-stone-500 hover:text-rose-400"
-                      >
-                        ✕
-                      </button>
-                    </span>
-                  ))}
-                </div>
-                <div className="mt-1.5 flex gap-1">
-                  <input
-                    list="builder-categories"
-                    placeholder="Add category…"
-                    className="w-full rounded-md border border-stone-700 bg-stone-900 px-2 py-1 text-[11px] outline-none focus:border-emerald-600"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        const value = (e.target as HTMLInputElement).value.trim();
-                        if (value) {
-                          update((d) => {
-                            const en = d.entries.find((x) => x.card.id === selectedEntry.card.id);
-                            if (en && !en.categories.includes(value)) en.categories.push(value);
-                          });
-                          (e.target as HTMLInputElement).value = "";
-                        }
-                      }
-                    }}
-                  />
-                  <datalist id="builder-categories">
-                    {allCategories.map((c) => (
-                      <option key={c} value={c} />
-                    ))}
-                  </datalist>
-                </div>
-              </div>
-
-              {/* Printing / variation picker */}
-              <div>
-                <div className="mb-1 flex items-center justify-between">
-                  <span className="text-[10px] font-bold tracking-wide text-stone-500 uppercase">
-                    Printing / variation
-                  </span>
-                  <button
-                    onClick={() =>
-                      void fetchPrintings(selectedEntry.card.oracle_id).then(setPrintings)
-                    }
-                    className="text-[11px] text-sky-400 hover:text-sky-300"
-                  >
-                    Browse printings…
-                  </button>
-                </div>
-                {printings && (
-                  <div className="grid max-h-72 grid-cols-2 gap-1.5 overflow-y-auto rounded-md border border-stone-800 p-1.5">
-                    {printings.map((p) => (
-                      <button
-                        key={p.id}
-                        onClick={() => {
-                          update((d) => {
-                            const e = d.entries.find((x) => x.card.id === selectedEntry.card.id);
-                            if (e) e.card = p;
-                            const ci = d.commanders.findIndex(
-                              (c) => c.oracle_id === p.oracle_id,
-                            );
-                            if (ci >= 0) d.commanders[ci] = p;
-                          });
-                          setSelectedId(p.id);
-                          setPrintings(null);
-                        }}
-                        className={`rounded transition hover:ring-2 hover:ring-sky-500 ${
-                          p.id === selectedEntry.card.id ? "ring-2 ring-emerald-500" : ""
-                        }`}
-                        title={p.prices?.usd ? `$${p.prices.usd}` : undefined}
-                      >
-                        <CardImage card={p} className="aspect-[5/7] w-full" />
-                      </button>
-                    ))}
-                    {printings.length === 0 && (
-                      <span className="col-span-2 p-2 text-center text-[11px] text-stone-600">
-                        Couldn't load printings.
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Commander toggle */}
-              <button
-                onClick={() =>
-                  update((d) => {
-                    const e = d.entries.find((x) => x.card.id === selectedEntry.card.id);
-                    if (!e) return;
-                    e.isCommander = !e.isCommander;
-                    d.commanders = d.entries.filter((x) => x.isCommander).map((x) => x.card);
-                    d.colorIdentity = [
-                      ...new Set(d.commanders.flatMap((c) => c.color_identity)),
-                    ];
-                  })
-                }
-                className={`rounded-md px-3 py-1.5 text-xs font-semibold ${
-                  selectedEntry.isCommander
-                    ? "bg-amber-700 text-white hover:bg-amber-600"
-                    : "bg-stone-800 text-stone-300 hover:bg-stone-700"
-                }`}
-              >
-                {selectedEntry.isCommander ? "★ Unset commander" : "♛ Set as commander"}
-              </button>
             </aside>
           )}
         </div>
@@ -593,11 +563,32 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
 
       <DragOverlay dropAnimation={null}>
         {dragName && (
-          <div className="rounded bg-stone-800 px-2 py-1 text-xs text-white shadow-2xl">
-            {dragName}
-          </div>
+          <div className="rounded bg-stone-800 px-2 py-1 text-xs text-white shadow-2xl">{dragName}</div>
         )}
       </DragOverlay>
+
+      {/* Card detail modal (from columns or quick-search) */}
+      {detailCard && (
+        <CardDetailModal
+          card={detailCard}
+          deck={draft}
+          update={update}
+          onClose={() => setDetailCard(null)}
+          onNavigate={setDetailCard}
+        />
+      )}
+
+      {/* Full search modal — opens card detail on click */}
+      {searchModal !== null && (
+        <CardSearchModal
+          initialQuery={searchModal}
+          onOpenCard={(card) => setDetailCard(card)}
+          onClose={() => {
+            setSearchModal(null);
+            setQuery("");
+          }}
+        />
+      )}
 
       {/* Save + changelog modal */}
       {saveOpen && (
