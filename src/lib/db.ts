@@ -1,6 +1,13 @@
 import Dexie, { type EntityTable } from "dexie";
 import type { GameSnapshot, ScryCard } from "@/types";
-import type { CollectionCard, DeckVersion, GameRecord, Primer, ShowcaseDeck } from "@/lib/repo/types";
+import type {
+  CollectionCard,
+  DeckVersion,
+  GameRecord,
+  Primer,
+  ShowcaseDeck,
+  WishlistCard,
+} from "@/lib/repo/types";
 
 /** A cached Scryfall card. `key` is the normalized name used for lookups. */
 export interface CachedCard {
@@ -50,6 +57,7 @@ const db = new Dexie("edh-playtest") as Dexie & {
   games: EntityTable<GameRecord & { id?: number }, "id">;
   oracle: EntityTable<OracleCard, "oracle_id">;
   collection: EntityTable<CollectionCard, "id">;
+  wishlist: EntityTable<WishlistCard, "oracleId">;
 };
 
 db.version(1).stores({
@@ -94,6 +102,19 @@ db.version(5).stores({
   games: "++id, deckId, date",
   oracle: "oracle_id, nameKey",
   collection: "id, oracleId, updatedAt",
+});
+
+db.version(6).stores({
+  cards: "key, card.id, fetchedAt",
+  snapshots: "++id, savedAt, deckName",
+  edhrecDecks: "slug, fetchedAt",
+  showcaseDecks: "id, name, updatedAt",
+  primers: "deckId",
+  deckVersions: "++id, deckId, date",
+  games: "++id, deckId, date",
+  oracle: "oracle_id, nameKey",
+  collection: "id, oracleId, updatedAt",
+  wishlist: "oracleId, updatedAt",
 });
 
 export { db };

@@ -18,6 +18,7 @@ import { BOARD_CATEGORIES, isBoardCategory } from "@/types";
 import { getRepo, type VersionChange } from "@/lib/repo";
 import { groupEntries, typeGroup } from "@/lib/deck/stats";
 import { searchCards, getCardDbStatus } from "@/lib/cards/carddb";
+import { ownedOracleIds } from "@/lib/cards/collection";
 import { CardImage } from "@/components/cards/CardImage";
 import { ManaCost } from "@/components/cards/ManaCost";
 import { CardSearchModal } from "@/components/builder/CardSearchModal";
@@ -50,7 +51,7 @@ function diffDecks(before: Deck, after: Deck): { adds: VersionChange[]; cuts: Ve
   return { adds, cuts };
 }
 
-function TextRow({ entry, onOpen }: { entry: DeckEntry; onOpen: () => void }) {
+function TextRow({ entry, owned, onOpen }: { entry: DeckEntry; owned: boolean; onOpen: () => void }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: entry.card.id });
   return (
     <button
@@ -62,6 +63,12 @@ function TextRow({ entry, onOpen }: { entry: DeckEntry; onOpen: () => void }) {
       style={{ opacity: isDragging ? 0.3 : 1 }}
     >
       <span className="w-4 shrink-0 text-stone-600">{entry.quantity}</span>
+      {!owned && (
+        <span
+          className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
+          title="Not in your collection"
+        />
+      )}
       <span className="min-w-0 flex-1 truncate">{entry.card.name}</span>
       <ManaCost cost={entry.card.mana_cost} size={11} className="shrink-0" />
     </button>
@@ -69,7 +76,7 @@ function TextRow({ entry, onOpen }: { entry: DeckEntry; onOpen: () => void }) {
 }
 
 /** Archidekt-style stack: overlapping card images, hover lifts a card. */
-function StackCard({ entry, onOpen }: { entry: DeckEntry; onOpen: () => void }) {
+function StackCard({ entry, owned, onOpen }: { entry: DeckEntry; owned: boolean; onOpen: () => void }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: entry.card.id });
   return (
     <div
@@ -79,7 +86,7 @@ function StackCard({ entry, onOpen }: { entry: DeckEntry; onOpen: () => void }) 
       onClick={onOpen}
       className="relative h-10 cursor-grab overflow-visible transition-[z-index] hover:z-30"
       style={{ opacity: isDragging ? 0.3 : 1 }}
-      title={entry.card.name}
+      title={owned ? entry.card.name : `${entry.card.name} — not in your collection`}
     >
       <CardImage
         card={entry.card}
@@ -89,6 +96,12 @@ function StackCard({ entry, onOpen }: { entry: DeckEntry; onOpen: () => void }) 
         <span className="absolute top-1 left-1 z-10 rounded-full bg-black/80 px-1.5 text-[10px] font-bold text-white">
           ×{entry.quantity}
         </span>
+      )}
+      {!owned && (
+        <span
+          className="absolute top-1 right-1 z-10 h-2 w-2 rounded-full bg-amber-500 ring-1 ring-black"
+          title="Not in your collection"
+        />
       )}
     </div>
   );
@@ -109,6 +122,7 @@ function CategoryColumn({
   setting,
   viewMode,
   accent,
+  ownedIds,
   onOpen,
   onToggleSetting,
 }: {
@@ -118,6 +132,7 @@ function CategoryColumn({
   setting: CategorySetting | undefined;
   viewMode: ViewMode;
   accent?: "commander";
+  ownedIds: Set<string>;
   onOpen: (card: ScryCard) => void;
   onToggleSetting?: (key: keyof CategorySetting) => void;
 }) {
@@ -188,14 +203,24 @@ function CategoryColumn({
       {viewMode === "text" ? (
         <div className="flex min-h-8 flex-col gap-0.5">
           {entries.map((e) => (
-            <TextRow key={e.card.id} entry={e} onOpen={() => onOpen(e.card)} />
+            <TextRow
+              key={e.card.id}
+              entry={e}
+              owned={ownedIds.has(e.card.oracle_id)}
+              onOpen={() => onOpen(e.card)}
+            />
           ))}
           {entries.length === 0 && <DropHint />}
         </div>
       ) : (
         <div className="flex min-h-8 flex-col pb-[120%]">
           {entries.map((e) => (
-            <StackCard key={e.card.id} entry={e} onOpen={() => onOpen(e.card)} />
+            <StackCard
+              key={e.card.id}
+              entry={e}
+              owned={ownedIds.has(e.card.oracle_id)}
+              onOpen={() => onOpen(e.card)}
+            />
           ))}
           {entries.length === 0 && <DropHint />}
         </div>
@@ -218,7 +243,12 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
   const [saveTitle, setSaveTitle] = useState("");
   const [saving, setSaving] = useState(false);
   const [dragName, setDragName] = useState<string | null>(null);
+  const [ownedIds, setOwnedIds] = useState<Set<string>>(new Set());
   const searchTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    void ownedOracleIds().then(setOwnedIds);
+  }, []);
 
   useEffect(() => {
     try {
@@ -257,6 +287,16 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
   );
 
   const groups = useMemo(() => (draft ? groupEntries(draft) : []), [draft]);
+
+  // Buildability: distinct cards (incl. commanders) you own in your collection.
+  const buildable = useMemo(() => {
+    const ids = new Set<string>();
+    for (const e of draft?.entries ?? []) ids.add(e.card.oracle_id);
+    for (const c of draft?.commanders ?? []) ids.add(c.oracle_id);
+    let owned = 0;
+    for (const id of ids) if (ownedIds.has(id)) owned += 1;
+    return { owned, total: ids.size };
+  }, [draft, ownedIds]);
   const commanderEntries = useMemo(
     () => draft?.entries.filter((e) => e.isCommander) ?? [],
     [draft],
@@ -399,6 +439,12 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
             {draft.entries.reduce((n, e) => n + (e.isCommander ? 0 : e.quantity), 0)} +{" "}
             {draft.commanders.length} cmdr
           </span>
+          <span
+            className="rounded-md bg-stone-900 px-2 py-1 text-[11px] font-semibold text-amber-300"
+            title="Distinct cards in this deck you own in your collection"
+          >
+            👜 {buildable.owned}/{buildable.total} owned
+          </span>
 
           {/* View toggle */}
           <div className="flex gap-0.5 rounded-lg bg-stone-900 p-0.5">
@@ -509,6 +555,7 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
                 entries={commanderEntries}
                 setting={undefined}
                 viewMode={viewMode}
+                ownedIds={ownedIds}
                 accent="commander"
                 onOpen={setDetailCard}
               />
@@ -521,6 +568,7 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
                 entries={entries}
                 setting={draft.categorySettings?.[group]}
                 viewMode={viewMode}
+                ownedIds={ownedIds}
                 onOpen={setDetailCard}
                 onToggleSetting={(key) => toggleSetting(group, key)}
               />
@@ -541,6 +589,7 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
                   entries={entries}
                   setting={draft.categorySettings?.[group]}
                   viewMode={viewMode}
+                  ownedIds={ownedIds}
                   onOpen={setDetailCard}
                   onToggleSetting={(key) => toggleSetting(group, key)}
                 />
@@ -553,6 +602,7 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
                   entries={[]}
                   setting={draft.categorySettings?.[b] ?? { inDeck: false, inPrice: false }}
                   viewMode={viewMode}
+                  ownedIds={ownedIds}
                   onOpen={setDetailCard}
                   onToggleSetting={(key) => toggleSetting(b, key)}
                 />

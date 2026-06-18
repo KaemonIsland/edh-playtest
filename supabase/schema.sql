@@ -91,6 +91,17 @@ create table if not exists collection (
 );
 create index if not exists collection_oracle_idx on collection(oracle_id);
 
+create table if not exists wishlist (
+  oracle_id text primary key,
+  owner_id uuid references profiles(id),
+  name text not null,
+  card_json jsonb not null,
+  quantity int not null default 1,
+  note text,
+  added_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 -- Row-Level Security (permissive anon policies; see note at top).
 alter table profiles enable row level security;
 alter table decks enable row level security;
@@ -99,6 +110,7 @@ alter table deck_versions enable row level security;
 alter table games enable row level security;
 alter table comments enable row level security;
 alter table collection enable row level security;
+alter table wishlist enable row level security;
 
 create policy "anon read decks" on decks for select using (true);
 create policy "anon write decks" on decks for insert with check (true);
@@ -125,3 +137,8 @@ create policy "anon read collection" on collection for select using (true);
 create policy "anon write collection" on collection for insert with check (true);
 create policy "anon update collection" on collection for update using (true);
 create policy "anon delete collection" on collection for delete using (true);
+
+create policy "anon read wishlist" on wishlist for select using (true);
+create policy "anon write wishlist" on wishlist for insert with check (true);
+create policy "anon update wishlist" on wishlist for update using (true);
+create policy "anon delete wishlist" on wishlist for delete using (true);

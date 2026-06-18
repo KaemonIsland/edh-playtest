@@ -5,6 +5,8 @@ import Link from "next/link";
 import type { ScryCard } from "@/types";
 import { finishPrice, getRepo, type CollectionCard } from "@/lib/repo";
 import { collectionStats, enrichCollectionFromOracle, setCollectionQty } from "@/lib/cards/collection";
+import { adjustWishlist } from "@/lib/cards/wishlist";
+import type { WishlistCard } from "@/lib/repo";
 import { getCardDbStatus, fetchAllSets, type SetInfo } from "@/lib/cards/carddb";
 import { groupBySet } from "@/lib/cards/sets";
 import { cardComparator, type CardSort } from "@/lib/cards/sort";
@@ -26,6 +28,8 @@ const PAGE = 60;
 
 export default function CollectionPage() {
   const [cards, setCards] = useState<CollectionCard[] | null>(null);
+  const [wishlist, setWishlist] = useState<WishlistCard[] | null>(null);
+  const [mode, setMode] = useState<"collection" | "wishlist">("collection");
   const [view, setView] = useState<View>({ kind: "browse" });
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<CardFilters>(emptyFilters);
@@ -39,10 +43,26 @@ export default function CollectionPage() {
   const refresh = useCallback(async () => {
     const list = await getRepo().listCollection();
     setCards(list);
+    void getRepo().listWishlist().then(setWishlist);
     // Backfill rarity/keywords/release date on older rows (best-effort).
     const enriched = await enrichCollectionFromOracle(list);
     if (enriched !== list) setCards(enriched);
   }, []);
+
+  const wishlistVisible = useMemo(() => {
+    const filtered = (wishlist ?? []).filter((w) => w.quantity > 0 && matchesFilters(w.card, filters));
+    const cmp = cardComparator(sort, (sc) => finishPrice(sc, "nonfoil") ?? 0);
+    return [...filtered].sort((a, b) => cmp(a.card, b.card));
+  }, [wishlist, filters, sort]);
+
+  const changeWish = async (w: WishlistCard, qty: number) => {
+    setWishlist((prev) =>
+      (prev ?? [])
+        .map((x) => (x.oracleId === w.oracleId ? { ...x, quantity: qty } : x))
+        .filter((x) => x.quantity > 0),
+    );
+    await adjustWishlist(w.card, qty - w.quantity);
+  };
 
   useEffect(() => {
     void refresh();
@@ -138,69 +158,143 @@ export default function CollectionPage() {
           <span className="font-semibold text-stone-200">Collection</span>
         </nav>
 
-        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-          <div className="flex items-center gap-3">
-            {inGrid && (
-              <button
-                onClick={() => setView({ kind: "browse" })}
-                className="rounded-md border border-stone-700 bg-stone-900 px-2.5 py-1.5 text-xs font-semibold text-stone-300 hover:bg-stone-800"
-              >
-                ← Sets
-              </button>
-            )}
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight">
-                {view.kind === "set" ? view.name : view.kind === "all" ? "All cards" : "My collection"}
-              </h1>
-              <p className="mt-0.5 text-sm text-stone-500">
-                {view.kind === "browse"
-                  ? "Browse by set, or open All cards to filter everything."
-                  : "Click a card for details, printings, and which decks use it."}
-              </p>
+        {/* Collection / Wishlist toggle */}
+        <div className="mb-4 inline-flex gap-0.5 rounded-lg bg-stone-900 p-0.5">
+          {(
+            [
+              ["collection", "📚 Collection"],
+              ["wishlist", `⭐ Wishlist${wishlist?.length ? ` (${wishlist.length})` : ""}`],
+            ] as const
+          ).map(([m, label]) => (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                mode === m ? "bg-stone-700 text-white" : "text-stone-400 hover:text-stone-200"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {mode === "wishlist" ? (
+          <div className="mb-4">
+            <h1 className="text-2xl font-bold tracking-tight">Wishlist</h1>
+            <p className="mt-0.5 text-sm text-stone-500">
+              Cards you want. Add from any card’s detail, or “add missing” from a deck’s coverage.
+            </p>
+          </div>
+        ) : (
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+            <div className="flex items-center gap-3">
+              {inGrid && (
+                <button
+                  onClick={() => setView({ kind: "browse" })}
+                  className="rounded-md border border-stone-700 bg-stone-900 px-2.5 py-1.5 text-xs font-semibold text-stone-300 hover:bg-stone-800"
+                >
+                  ← Sets
+                </button>
+              )}
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight">
+                  {view.kind === "set" ? view.name : view.kind === "all" ? "All cards" : "My collection"}
+                </h1>
+                <p className="mt-0.5 text-sm text-stone-500">
+                  {view.kind === "browse"
+                    ? "Browse by set, or open All cards to filter everything."
+                    : "Click a card for details, printings, and which decks use it."}
+                </p>
+              </div>
+            </div>
+            {/* Context-specific metadata */}
+            <div className="flex gap-4 text-right">
+              <Stat label="Cards" value={(inGrid ? scopeStats : totalStats).totalCards.toLocaleString()} />
+              <Stat label="Unique" value={(inGrid ? scopeStats : totalStats).uniqueOracle.toLocaleString()} />
+              <Stat
+                label="Value (TCG)"
+                value={`$${(inGrid ? scopeStats : totalStats).value.toFixed(0)}`}
+                accent
+              />
             </div>
           </div>
-          {/* Context-specific metadata */}
-          <div className="flex gap-4 text-right">
-            <Stat label="Cards" value={(inGrid ? scopeStats : totalStats).totalCards.toLocaleString()} />
-            <Stat label="Unique" value={(inGrid ? scopeStats : totalStats).uniqueOracle.toLocaleString()} />
-            <Stat
-              label="Value (TCG)"
-              value={`$${(inGrid ? scopeStats : totalStats).value.toFixed(0)}`}
-              accent
-            />
-          </div>
-        </div>
+        )}
 
-        {/* Add bar — always present */}
-        <div className="mb-4 flex gap-2">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                setSearchModal(search);
-                setSearch("");
-              }
-            }}
-            placeholder="Add cards to your collection — type a name and press Enter…"
-            className="w-full rounded-md border border-stone-700 bg-stone-900 px-3 py-2 text-sm outline-none focus:border-emerald-600"
-          />
-          <button
-            onClick={() => setSearchModal(search)}
-            className="shrink-0 rounded-md bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-600"
-          >
-            🔍 Browse cards
-          </button>
-          <button
-            onClick={() => setImportOpen(true)}
-            className="shrink-0 rounded-md border border-stone-700 bg-stone-900 px-4 py-2 text-sm font-semibold text-stone-300 hover:bg-stone-800"
-          >
-            📥 Import CSV
-          </button>
-        </div>
+        {/* Add bar — collection mode */}
+        {mode === "collection" && (
+          <div className="mb-4 flex gap-2">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  setSearchModal(search);
+                  setSearch("");
+                }
+              }}
+              placeholder="Add cards to your collection — type a name and press Enter…"
+              className="w-full rounded-md border border-stone-700 bg-stone-900 px-3 py-2 text-sm outline-none focus:border-emerald-600"
+            />
+            <button
+              onClick={() => setSearchModal(search)}
+              className="shrink-0 rounded-md bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-600"
+            >
+              🔍 Browse cards
+            </button>
+            <button
+              onClick={() => setImportOpen(true)}
+              className="shrink-0 rounded-md border border-stone-700 bg-stone-900 px-4 py-2 text-sm font-semibold text-stone-300 hover:bg-stone-800"
+            >
+              📥 Import CSV
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Body */}
+      {/* Wishlist body */}
+      {mode === "wishlist" && (
+        <div className="mx-auto flex w-full max-w-6xl flex-1 gap-3 px-4 pb-10">
+          {showFilters && (
+            <FilterSidebar filters={filters} onChange={setFilters} sort={sort} onSort={setSort} />
+          )}
+          <div className="min-w-0 flex-1">
+            <div className="mb-2 flex items-center gap-2">
+              <button
+                onClick={() => setShowFilters((v) => !v)}
+                className="rounded-md border border-stone-700 bg-stone-900 px-2.5 py-1 text-[11px] font-semibold text-stone-300 hover:bg-stone-800"
+              >
+                {showFilters ? "◀ Hide filters" : "▶ Filters"}
+              </button>
+              <span className="ml-auto text-[11px] text-stone-500">{wishlistVisible.length} cards</span>
+            </div>
+            {wishlist === null ? (
+              <p className="text-sm text-stone-600">Loading…</p>
+            ) : wishlistVisible.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-stone-800 p-10 text-center text-sm text-stone-500">
+                {(wishlist.length ?? 0) === 0
+                  ? "Your wishlist is empty. Add cards from any card's detail view (Collection Records → ⭐ Wishlist)."
+                  : "No wishlist cards match these filters."}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+                {wishlistVisible.map((w) => (
+                  <CardGridTile
+                    key={w.oracleId}
+                    card={w.card}
+                    owned={w.quantity}
+                    price={finishPrice(w.card, "nonfoil")}
+                    onOpen={() => setDetailCard(w.card)}
+                    onAdjust={(d) => void changeWish(w, w.quantity + d)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Collection body */}
+      {mode === "collection" && (
       <div className="mx-auto flex w-full max-w-6xl flex-1 gap-3 px-4 pb-10">
         {cards === null ? (
           <p className="text-sm text-stone-600">Loading…</p>
@@ -289,6 +383,7 @@ export default function CollectionPage() {
           </>
         ))}
       </div>
+      )}
 
       <p className="px-4 pb-6 text-center text-[10px] text-stone-600">
         {getCardDbStatus().syncedAt

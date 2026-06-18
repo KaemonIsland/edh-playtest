@@ -13,6 +13,7 @@ import {
   type CollectionCard,
 } from "@/lib/repo";
 import { adjustCollection } from "@/lib/cards/collection";
+import { adjustWishlist } from "@/lib/cards/wishlist";
 import { fetchPrintings } from "@/lib/cards/carddb";
 import { typeGroup } from "@/lib/deck/stats";
 import { CardImage } from "@/components/cards/CardImage";
@@ -77,6 +78,7 @@ export function CardDetailModal({
   const [rulings, setRulings] = useState<Ruling[] | null>(null);
   const [inDecks, setInDecks] = useState<DeckUsage[] | null>(null);
   const [owned, setOwned] = useState<CollectionCard[] | null>(null);
+  const [wishQty, setWishQty] = useState(0);
   const [allDecks, setAllDecks] = useState<{ id: string; name: string }[] | null>(null);
   const [addTarget, setAddTarget] = useState("");
   const [addBoard, setAddBoard] = useState<"Maybeboard" | "Ideas">("Maybeboard");
@@ -103,7 +105,12 @@ export function CardDetailModal({
 
   const refreshOwned = useCallback(async () => {
     setOwned(await getRepo().getCollectionByOracle(card.oracle_id));
+    setWishQty((await getRepo().getWishlistEntry(card.oracle_id))?.quantity ?? 0);
   }, [card.oracle_id]);
+
+  const adjustWish = async (delta: number) => {
+    setWishQty(await adjustWishlist(shown, delta));
+  };
 
   const refreshInDecks = useCallback(async () => {
     const repo = getRepo();
@@ -142,6 +149,7 @@ export function CardDetailModal({
     setRulings(null);
     setInDecks(null);
     setOwned(null);
+    setWishQty(0);
     setAllDecks(null);
     setAddTarget("");
     setAddNote(null);
@@ -589,9 +597,31 @@ export function CardDetailModal({
 
             {tab === "collection" && (
               <div className="flex flex-col gap-3">
-                <div className="text-xs text-stone-400">
-                  You own <span className="font-bold text-stone-100">{totalOwned}</span> cop
-                  {totalOwned === 1 ? "y" : "ies"} of this card across all printings/finishes.
+                <div className="flex items-center gap-2">
+                  <div className="text-xs text-stone-400">
+                    You own <span className="font-bold text-stone-100">{totalOwned}</span> cop
+                    {totalOwned === 1 ? "y" : "ies"} of this card across all printings/finishes.
+                  </div>
+                  {/* Wishlist control */}
+                  <div className="ml-auto flex items-center gap-1 rounded-md border border-stone-700 bg-stone-900 px-1.5 py-1">
+                    <span className="text-[10px] font-bold tracking-wide text-amber-400 uppercase">
+                      ⭐ Wishlist
+                    </span>
+                    <button
+                      onClick={() => void adjustWish(-1)}
+                      disabled={wishQty === 0}
+                      className="h-5 w-5 rounded bg-stone-800 text-[11px] font-bold text-rose-400 hover:bg-stone-700 disabled:opacity-30"
+                    >
+                      −
+                    </button>
+                    <span className="min-w-4 text-center text-xs font-bold">{wishQty}</span>
+                    <button
+                      onClick={() => void adjustWish(1)}
+                      className="h-5 w-5 rounded bg-stone-800 text-[11px] font-bold text-emerald-400 hover:bg-stone-700"
+                    >
+                      +
+                    </button>
+                  </div>
                 </div>
 
                 {/* Add the shown printing in each finish */}

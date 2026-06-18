@@ -11,6 +11,7 @@ import type {
   Repo,
   ShowcaseDeck,
   ShowcaseDeckMeta,
+  WishlistCard,
 } from "./types";
 
 function metaOf(deck: Deck): Omit<ShowcaseDeckMeta, "updatedAt"> {
@@ -148,5 +149,25 @@ export class LocalRepo implements Repo {
 
   async clearCollection(): Promise<void> {
     await db.collection.clear();
+  }
+
+  async listWishlist(): Promise<WishlistCard[]> {
+    return db.wishlist.orderBy("updatedAt").reverse().toArray();
+  }
+
+  async getWishlistEntry(oracleId: string): Promise<WishlistCard | null> {
+    return (await db.wishlist.get(oracleId)) ?? null;
+  }
+
+  async saveWishlistEntry(entry: WishlistCard): Promise<void> {
+    if (entry.quantity <= 0) {
+      await db.wishlist.delete(entry.oracleId);
+      return;
+    }
+    await db.wishlist.put({ ...entry, updatedAt: Date.now() });
+  }
+
+  async removeWishlistEntry(oracleId: string): Promise<void> {
+    await db.wishlist.delete(oracleId);
   }
 }

@@ -116,6 +116,17 @@ export function collectionEntryId(printingId: string, finish: CardFinish): strin
   return `${printingId}:${finish}`;
 }
 
+/** A card the user wants to acquire (oracle-level). */
+export interface WishlistCard {
+  oracleId: string;
+  name: string;
+  card: import("@/types").ScryCard;
+  quantity: number;
+  note?: string;
+  addedAt: number;
+  updatedAt: number;
+}
+
 /** Unit price for a finish, from the cached printing's Scryfall (TCGplayer) data. */
 export function finishPrice(card: import("@/types").ScryCard, finish: CardFinish): number | null {
   const raw = finish === "nonfoil" ? card.prices?.usd : card.prices?.usd_foil;
@@ -161,6 +172,13 @@ export interface Repo {
   removeCollectionEntry(id: string): Promise<void>;
   /** Wipe the whole collection (for "replace on import"). */
   clearCollection(): Promise<void>;
+
+  // Wishlist
+  listWishlist(): Promise<WishlistCard[]>;
+  getWishlistEntry(oracleId: string): Promise<WishlistCard | null>;
+  /** Upsert; quantity <= 0 removes the entry. */
+  saveWishlistEntry(entry: WishlistCard): Promise<void>;
+  removeWishlistEntry(oracleId: string): Promise<void>;
 }
 
 /** Aggregates computed from a deck's game log. */

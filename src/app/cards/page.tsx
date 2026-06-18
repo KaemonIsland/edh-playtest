@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { ScryCard } from "@/types";
 import { collectionEntryId, finishPrice, getRepo, type CardFinish } from "@/lib/repo";
 import { adjustCollection } from "@/lib/cards/collection";
+import type { CollectionCard } from "@/lib/repo";
 import { fetchAllSets, fetchSetCards, type SetInfo } from "@/lib/cards/carddb";
 import { cardComparator, type CardSort } from "@/lib/cards/sort";
 import { CardDetailModal } from "@/components/builder/CardDetailModal";
@@ -69,6 +70,49 @@ export default function AllCardsPage() {
       m.set(collectionEntryId(card.id, finish), next);
       return m;
     });
+  };
+
+  const [bulkBusy, setBulkBusy] = useState(false);
+  /** Add one nonfoil of each currently-shown card to the collection. */
+  const bulkAddOneEach = async () => {
+    const targets = visibleCards;
+    if (targets.length === 0) return;
+    if (
+      !window.confirm(
+        `Add one nonfoil copy of ${targets.length} card${targets.length === 1 ? "" : "s"} to your collection?`,
+      )
+    )
+      return;
+    setBulkBusy(true);
+    try {
+      const repo = getRepo();
+      const now = Date.now();
+      const entries: CollectionCard[] = [];
+      const nextOwned = new Map(owned);
+      for (const c of targets) {
+        const id = collectionEntryId(c.id, "nonfoil");
+        const qty = (nextOwned.get(id) ?? 0) + 1;
+        nextOwned.set(id, qty);
+        entries.push({
+          id,
+          printingId: c.id,
+          oracleId: c.oracle_id,
+          name: c.name,
+          setCode: c.set,
+          setName: c.set_name,
+          collectorNumber: c.collector_number,
+          finish: "nonfoil",
+          quantity: qty,
+          card: c,
+          addedAt: now,
+          updatedAt: now,
+        });
+      }
+      await repo.saveCollectionEntries(entries);
+      setOwned(nextOwned);
+    } finally {
+      setBulkBusy(false);
+    }
   };
 
   const setItems: SetGridItem[] = useMemo(
@@ -214,9 +258,15 @@ export default function AllCardsPage() {
                 {filtersActive(filters) && (
                   <span className="text-[11px] text-emerald-400">{visibleCards.length} matches</span>
                 )}
-                <span className="ml-auto text-[11px] text-stone-500">
-                  {visibleCards.length} cards
-                </span>
+                <button
+                  onClick={() => void bulkAddOneEach()}
+                  disabled={bulkBusy || visibleCards.length === 0}
+                  className="ml-auto rounded-md bg-emerald-700 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-emerald-600 disabled:opacity-40"
+                  title="Add one nonfoil of each shown card to your collection"
+                >
+                  {bulkBusy ? "Adding…" : `+1 each (${visibleCards.length})`}
+                </button>
+                <span className="text-[11px] text-stone-500">{visibleCards.length} cards</span>
               </div>
 
               {loadingCards || setCards === null ? (

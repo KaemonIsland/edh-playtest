@@ -11,6 +11,7 @@ import type {
   Repo,
   ShowcaseDeck,
   ShowcaseDeckMeta,
+  WishlistCard,
 } from "./types";
 
 /**
@@ -441,5 +442,56 @@ export class SupabaseRepo implements Repo {
   async clearCollection(): Promise<void> {
     // PostgREST requires a filter on DELETE; this matches all rows.
     await this.rest("collection?id=neq.__none__", { method: "DELETE" });
+  }
+
+  async listWishlist(): Promise<WishlistCard[]> {
+    type Row = {
+      oracle_id: string;
+      name: string;
+      card_json: WishlistCard["card"];
+      quantity: number;
+      note: string | null;
+      added_at?: string;
+      updated_at: string;
+    };
+    const rows = await this.rest<Row[]>("wishlist?select=*&order=updated_at.desc");
+    return rows.map((r) => ({
+      oracleId: r.oracle_id,
+      name: r.name,
+      card: r.card_json,
+      quantity: r.quantity,
+      note: r.note ?? undefined,
+      addedAt: r.added_at ? new Date(r.added_at).getTime() : Date.now(),
+      updatedAt: new Date(r.updated_at).getTime(),
+    }));
+  }
+
+  async getWishlistEntry(oracleId: string): Promise<WishlistCard | null> {
+    const all = await this.listWishlist();
+    return all.find((w) => w.oracleId === oracleId) ?? null;
+  }
+
+  async saveWishlistEntry(entry: WishlistCard): Promise<void> {
+    if (entry.quantity <= 0) {
+      await this.removeWishlistEntry(entry.oracleId);
+      return;
+    }
+    await this.rest("wishlist?on_conflict=oracle_id", {
+      method: "POST",
+      body: JSON.stringify([
+        {
+          oracle_id: entry.oracleId,
+          name: entry.name,
+          card_json: entry.card,
+          quantity: entry.quantity,
+          note: entry.note ?? null,
+          updated_at: new Date().toISOString(),
+        },
+      ]),
+    });
+  }
+
+  async removeWishlistEntry(oracleId: string): Promise<void> {
+    await this.rest(`wishlist?oracle_id=eq.${encodeURIComponent(oracleId)}`, { method: "DELETE" });
   }
 }
