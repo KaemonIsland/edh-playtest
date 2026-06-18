@@ -198,6 +198,49 @@ export async function searchPrintings(oracleId: string): Promise<ScryCard[]> {
   return data.data.slice(0, 60).map(toScryCard);
 }
 
+export interface SetInfo {
+  code: string;
+  name: string;
+  released_at?: string;
+  icon_svg_uri?: string;
+  card_count: number;
+  set_type: string;
+}
+
+/** All paper Magic sets, newest first (for the All Cards browser). */
+export async function fetchSets(): Promise<SetInfo[]> {
+  const res = await throttled(() => fetch(`${SCRYFALL}/sets`, { headers: HEADERS }));
+  if (!res.ok) return [];
+  const data = (await res.json()) as { data: RawCard[] };
+  return data.data
+    .filter((s) => !s.digital && !["token", "memorabilia", "minigame"].includes(s.set_type))
+    .map((s) => ({
+      code: s.code,
+      name: s.name,
+      released_at: s.released_at,
+      icon_svg_uri: s.icon_svg_uri,
+      card_count: s.card_count ?? 0,
+      set_type: s.set_type,
+    }))
+    .sort((a, b) => (b.released_at ?? "").localeCompare(a.released_at ?? ""));
+}
+
+/** Every card printing in a set, by collector number (paginated, capped). */
+export async function fetchSetCards(code: string): Promise<ScryCard[]> {
+  const cards: ScryCard[] = [];
+  let url: string | null =
+    `${SCRYFALL}/cards/search?q=${encodeURIComponent(`set:${code} unique:prints`)}&order=set`;
+  for (let page = 0; page < 6 && url; page++) {
+    const current: string = url;
+    const res = await throttled(() => fetch(current, { headers: HEADERS }));
+    if (!res.ok) break;
+    const data = (await res.json()) as { data: RawCard[]; has_more?: boolean; next_page?: string };
+    cards.push(...data.data.map(toScryCard));
+    url = data.has_more && data.next_page ? data.next_page : null;
+  }
+  return cards;
+}
+
 /** A single random card matching a Scryfall query (e.g. is:commander). */
 export async function randomCard(query: string): Promise<ScryCard | null> {
   const res = await throttled(() =>

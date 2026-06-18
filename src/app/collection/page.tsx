@@ -3,16 +3,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { ScryCard } from "@/types";
-import { FINISH_LABEL, finishPrice, getRepo, type CollectionCard } from "@/lib/repo";
+import { finishPrice, getRepo, type CollectionCard } from "@/lib/repo";
 import { collectionStats, enrichCollectionFromOracle, setCollectionQty } from "@/lib/cards/collection";
-import { getCardDbStatus } from "@/lib/cards/carddb";
+import { getCardDbStatus, fetchAllSets, type SetInfo } from "@/lib/cards/carddb";
+import { groupBySet } from "@/lib/cards/sets";
 import { cardComparator, type CardSort } from "@/lib/cards/sort";
-import { CardImage } from "@/components/cards/CardImage";
-import { ManaCost } from "@/components/cards/ManaCost";
+import { CardGridTile } from "@/components/collection/CardGridTile";
+import { SetGrid, type SetGridItem } from "@/components/collection/SetGrid";
 import { CardSearchModal } from "@/components/builder/CardSearchModal";
 import { CardDetailModal } from "@/components/builder/CardDetailModal";
 import { ImportCsvModal } from "@/components/collection/ImportCsvModal";
-import { SetsBrowser } from "@/components/collection/SetsBrowser";
 import {
   FilterSidebar,
   emptyFilters,
@@ -101,6 +101,30 @@ export default function CollectionPage() {
     [cards],
   );
 
+  // Full set list (for total card counts on the owned-sets grid).
+  const [allSets, setAllSets] = useState<SetInfo[] | null>(null);
+  useEffect(() => {
+    void fetchAllSets().then(setAllSets);
+  }, []);
+
+  const ownedSetItems: SetGridItem[] = useMemo(() => {
+    const owned = groupBySet((cards ?? []).filter((c) => c.quantity > 0));
+    const byCode = new Map((allSets ?? []).map((s) => [s.code, s]));
+    return owned.map((g) => {
+      const info = byCode.get(g.code);
+      const total = info?.card_count;
+      return {
+        code: g.code,
+        name: info?.name ?? g.name,
+        released: info?.released_at ?? g.released,
+        icon: info?.icon_svg_uri,
+        type: info?.set_type,
+        primary: total ? `${g.unique}/${total} cards` : `${g.unique} cards`,
+        secondary: g.value > 0 ? `$${g.value.toFixed(0)}` : undefined,
+      };
+    });
+  }, [cards, allSets]);
+
   const inGrid = view.kind !== "browse";
 
   return (
@@ -108,7 +132,8 @@ export default function CollectionPage() {
       {/* Header */}
       <div className="mx-auto w-full max-w-6xl px-4 pt-8">
         <nav className="mb-4 flex gap-4 text-xs text-stone-400">
-          <Link href="/import" className="hover:text-white">Import</Link>
+          <Link href="/" className="hover:text-white">Home</Link>
+          <Link href="/cards" className="hover:text-white">All cards</Link>
           <Link href="/decks" className="hover:text-white">My decks</Link>
           <span className="font-semibold text-stone-200">Collection</span>
         </nav>
@@ -187,11 +212,24 @@ export default function CollectionPage() {
           </div>
         ) : view.kind === "browse" ? (
           <div className="w-full">
-            <SetsBrowser
-              cards={cards.filter((c) => c.quantity > 0)}
-              totalCards={totalStats.totalCards}
-              onAll={() => setView({ kind: "all" })}
-              onSet={(code, name) => setView({ kind: "set", code, name })}
+            {/* All cards bar */}
+            <button
+              onClick={() => setView({ kind: "all" })}
+              className="mb-4 flex w-full items-center gap-3 rounded-xl border border-stone-700 bg-gradient-to-r from-stone-900 to-stone-950 px-4 py-4 text-left transition hover:border-emerald-600/60"
+            >
+              <span className="text-2xl">🗃️</span>
+              <div className="flex-1">
+                <div className="text-base font-bold text-stone-100">All cards</div>
+                <div className="text-xs text-stone-500">Browse and filter your entire collection</div>
+              </div>
+              <span className="text-sm font-bold text-stone-300">
+                {totalStats.totalCards.toLocaleString()} cards
+              </span>
+              <span className="text-stone-600">→</span>
+            </button>
+            <SetGrid
+              items={ownedSetItems}
+              onSelect={(code, name) => setView({ kind: "set", code, name })}
             />
           </div>
         ) : (
@@ -230,70 +268,15 @@ export default function CollectionPage() {
               ) : (
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
                   {shown.map((c) => (
-                    <div
+                    <CardGridTile
                       key={c.id}
-                      className="flex flex-col gap-1 rounded-lg border border-stone-800 bg-stone-950 p-2"
-                      style={{ contentVisibility: "auto", containIntrinsicSize: "260px" }}
-                    >
-                      <button onClick={() => setDetailCard(c.card)} className="group relative text-left">
-                        <CardImage
-                          card={c.card}
-                          className="aspect-[5/7] w-full transition group-hover:ring-2 group-hover:ring-sky-500"
-                        />
-                        <span className="absolute top-1 left-1 rounded-full bg-black/80 px-1.5 text-[10px] font-bold text-white">
-                          ×{c.quantity}
-                        </span>
-                        {c.finish !== "nonfoil" && (
-                          <span className="absolute top-1 right-1 rounded-full bg-amber-500 px-1.5 text-[9px] font-bold text-black">
-                            {c.finish === "foil" ? "FOIL" : "ETCH"}
-                          </span>
-                        )}
-                      </button>
-                      <div className="flex items-center gap-1">
-                        <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-stone-200" title={c.name}>
-                          {c.name}
-                        </span>
-                        <ManaCost cost={c.card.mana_cost} size={10} />
-                      </div>
-                      <div className="flex items-center justify-between text-[10px] text-stone-500">
-                        <span className="truncate" title={c.setName}>
-                          {c.setCode?.toUpperCase()} · {FINISH_LABEL[c.finish]}
-                        </span>
-                        <span className="text-emerald-400">
-                          {finishPrice(c.card, c.finish) !== null
-                            ? `$${(finishPrice(c.card, c.finish)! * c.quantity).toFixed(2)}`
-                            : "—"}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => void changeQty(c, c.quantity - 1)}
-                          className="h-6 w-6 rounded bg-stone-800 font-bold text-rose-400 hover:bg-stone-700"
-                        >
-                          −
-                        </button>
-                        <input
-                          type="number"
-                          min={0}
-                          value={c.quantity}
-                          onChange={(e) => void changeQty(c, Math.max(0, parseInt(e.target.value, 10) || 0))}
-                          className="w-12 rounded border border-stone-700 bg-stone-900 px-1 py-0.5 text-center text-xs outline-none focus:border-emerald-600"
-                        />
-                        <button
-                          onClick={() => void changeQty(c, c.quantity + 1)}
-                          className="h-6 w-6 rounded bg-stone-800 font-bold text-emerald-400 hover:bg-stone-700"
-                        >
-                          +
-                        </button>
-                        <button
-                          onClick={() => void changeQty(c, 0)}
-                          className="ml-auto rounded bg-stone-800 px-2 py-0.5 text-[10px] font-semibold text-stone-400 hover:bg-stone-700 hover:text-rose-400"
-                          title="Remove from collection"
-                        >
-                          🗑
-                        </button>
-                      </div>
-                    </div>
+                      card={c.card}
+                      owned={c.quantity}
+                      finishBadge={c.finish === "foil" ? "FOIL" : c.finish === "etched" ? "ETCH" : null}
+                      price={finishPrice(c.card, c.finish)}
+                      onOpen={() => setDetailCard(c.card)}
+                      onAdjust={(d) => void changeQty(c, c.quantity + d)}
+                    />
                   ))}
                   {limit < visible.length && (
                     <div ref={sentinelRef} className="col-span-full py-6 text-center text-xs text-stone-600">

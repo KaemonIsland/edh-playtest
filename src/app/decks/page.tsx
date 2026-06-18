@@ -70,6 +70,12 @@ export default function DecksPage() {
           </div>
           <div className="flex gap-2">
             <Link
+              href="/cards"
+              className="rounded-md border border-stone-700 bg-stone-900 px-4 py-2 text-sm font-semibold text-stone-300 hover:bg-stone-800"
+            >
+              🃏 All cards
+            </Link>
+            <Link
               href="/collection"
               className="rounded-md border border-stone-700 bg-stone-900 px-4 py-2 text-sm font-semibold text-stone-300 hover:bg-stone-800"
             >

@@ -15,6 +15,13 @@ const OPTIONS = [
     accent: "hover:border-sky-600/60",
   },
   {
+    href: "/cards",
+    emoji: "🃏",
+    title: "All Cards",
+    blurb: "Browse every set and add the cards you opened or bought to your collection.",
+    accent: "hover:border-violet-600/60",
+  },
+  {
     href: "/decks",
     emoji: "🗂️",
     title: "Decks",
@@ -75,7 +82,7 @@ export default function HomePage() {
         </header>
 
         {/* Three options */}
-        <div className="mt-10 grid gap-4 sm:grid-cols-3">
+        <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {OPTIONS.map((o) => (
             <Link
               key={o.href}

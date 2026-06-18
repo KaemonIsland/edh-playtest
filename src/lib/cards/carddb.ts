@@ -305,3 +305,45 @@ export async function fetchPrintings(oracleId: string): Promise<ScryCard[]> {
   const data = (await res.json()) as { cards: ScryCard[] };
   return data.cards;
 }
+
+export interface SetInfo {
+  code: string;
+  name: string;
+  released_at?: string;
+  icon_svg_uri?: string;
+  card_count: number;
+  set_type: string;
+}
+
+const SETS_CACHE_KEY = "edh-playtest:sets";
+const SETS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Full set list (cached in localStorage for a week). */
+export async function fetchAllSets(): Promise<SetInfo[]> {
+  try {
+    const raw = localStorage.getItem(SETS_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as { at: number; sets: SetInfo[] };
+      if (Date.now() - parsed.at < SETS_TTL_MS && parsed.sets.length) return parsed.sets;
+    }
+  } catch {
+    // ignore
+  }
+  const res = await fetch("/api/sets");
+  if (!res.ok) return [];
+  const data = (await res.json()) as { sets: SetInfo[] };
+  try {
+    localStorage.setItem(SETS_CACHE_KEY, JSON.stringify({ at: Date.now(), sets: data.sets }));
+  } catch {
+    // ignore
+  }
+  return data.sets;
+}
+
+/** Every printing in a set (by collector number). */
+export async function fetchSetCards(code: string): Promise<ScryCard[]> {
+  const res = await fetch(`/api/cards/set?code=${encodeURIComponent(code)}`);
+  if (!res.ok) return [];
+  const data = (await res.json()) as { cards: ScryCard[] };
+  return data.cards;
+}
