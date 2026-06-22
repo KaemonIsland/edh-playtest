@@ -170,6 +170,34 @@ export async function resolveCardsByIds(ids: string[]): Promise<ResolveResult> {
   };
 }
 
+/** Scryfall collection identifier (id / name / set+collector / name+set). */
+export type CardIdentifier =
+  | { id: string }
+  | { name: string }
+  | { set: string; collector_number: string }
+  | { name: string; set: string };
+
+/** Resolve mixed identifiers via POST /cards/collection (batched at 75). */
+export async function resolveIdentifiers(
+  identifiers: CardIdentifier[],
+): Promise<{ cards: ScryCard[] }> {
+  const cards: ScryCard[] = [];
+  for (let i = 0; i < identifiers.length; i += BATCH_SIZE) {
+    const batch = identifiers.slice(i, i + BATCH_SIZE);
+    const res = await throttled(() =>
+      fetch(`${SCRYFALL}/cards/collection`, {
+        method: "POST",
+        headers: HEADERS,
+        body: JSON.stringify({ identifiers: batch }),
+      }),
+    );
+    if (!res.ok) continue;
+    const data = (await res.json()) as { data: RawCard[] };
+    cards.push(...data.data.map(toScryCard));
+  }
+  return { cards };
+}
+
 export async function fuzzyNamed(name: string): Promise<ScryCard | null> {
   const res = await throttled(() =>
     fetch(`${SCRYFALL}/cards/named?fuzzy=${encodeURIComponent(name)}`, {

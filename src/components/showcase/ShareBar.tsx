@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { Deck } from "@/types";
 import { exportDecklist, type ExportFormat } from "@/lib/deck/export";
 import { saveCurrentDeck } from "@/lib/deck/storage";
+import { downloadTextFile, fileSlug } from "@/lib/download";
 import { useGameStore } from "@/lib/game/store";
 import { getRepo } from "@/lib/repo";
 
@@ -25,6 +26,10 @@ export function ShareBar({ deck }: { deck: Deck }) {
   const copyExport = async (format: ExportFormat) => {
     await navigator.clipboard.writeText(exportDecklist(deck, format)).catch(() => {});
     flash(format);
+  };
+
+  const downloadExport = (format: ExportFormat) => {
+    downloadTextFile(`${fileSlug(deck.name)}.${format}.txt`, exportDecklist(deck, format));
   };
 
   const playtest = () => {
@@ -56,13 +61,22 @@ export function ShareBar({ deck }: { deck: Deck }) {
             ["moxfield", "Moxfield"],
           ] as const
         ).map(([format, label]) => (
-          <button
-            key={format}
-            onClick={() => void copyExport(format)}
-            className="rounded px-2 py-1 text-[11px] font-semibold text-stone-300 hover:bg-stone-800"
-          >
-            {copied === format ? "✓" : label}
-          </button>
+          <span key={format} className="flex items-center">
+            <button
+              onClick={() => void copyExport(format)}
+              className="rounded px-2 py-1 text-[11px] font-semibold text-stone-300 hover:bg-stone-800"
+              title={`Copy ${label} list`}
+            >
+              {copied === format ? "✓" : label}
+            </button>
+            <button
+              onClick={() => downloadExport(format)}
+              className="rounded px-1 py-1 text-[11px] text-stone-500 hover:bg-stone-800 hover:text-stone-200"
+              title={`Download ${label} .txt`}
+            >
+              ↓
+            </button>
+          </span>
         ))}
       </div>
       {getRepo().mode !== "supabase" && (

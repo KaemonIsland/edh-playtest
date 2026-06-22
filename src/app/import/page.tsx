@@ -7,6 +7,7 @@ import type { Deck, ParsedDeckLine, ScryCard } from "@/types";
 import { parseDecklist } from "@/lib/deck/parse";
 import { validateCommanderDeck } from "@/lib/deck/validate";
 import { resolveCards, resolveOne, type ResolveProgress } from "@/lib/scryfall/resolve";
+import { fetchCardsByIds } from "@/lib/cards/carddb";
 import { saveBotDecks, saveCurrentDeck } from "@/lib/deck/storage";
 import { buildDeckFromText } from "@/lib/deck/build";
 import { fetchAverageDeck } from "@/lib/bot/edhrec";
@@ -50,6 +51,7 @@ export default function ImportPage() {
   const [fixups, setFixups] = useState<Record<string, string>>({});
   const [parseWarnings, setParseWarnings] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [url, setUrl] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
 
   // Saved decks to quick-launch into the playtester.
@@ -121,6 +123,76 @@ export default function ImportPage() {
       name: fb.name,
       status: `✓ Using bundled deck: ${fb.name} (${fb.commander}).`,
     });
+  };
+
+  /** Import a deck straight from an Archidekt / Moxfield URL. */
+  const doImportUrl = async () => {
+    if (!url.trim()) return;
+    setError(null);
+    setStage("resolving");
+    setProgress(null);
+    try {
+      const res = await fetch(`/api/import/deck?url=${encodeURIComponent(url.trim())}`);
+      const data = (await res.json()) as {
+        deck?: {
+          name: string;
+          cards: {
+            name: string;
+            quantity: number;
+            isCommander: boolean;
+            categories: string[];
+            scryfallId?: string;
+            set?: string;
+            collectorNumber?: string;
+          }[];
+        };
+        error?: string;
+      };
+      if (!res.ok || !data.deck) throw new Error(data.error || "Failed to fetch deck.");
+      const imported = data.deck;
+      setDeckName(imported.name);
+
+      // Resolve exact printings by Scryfall id where the source gave one,
+      // otherwise fall back to name resolution.
+      const ids = imported.cards.map((c) => c.scryfallId).filter((x): x is string => !!x);
+      const byId = new Map<string, ScryCard>();
+      if (ids.length) for (const card of await fetchCardsByIds(ids)) byId.set(card.id, card);
+      const needName = imported.cards.filter((c) => !c.scryfallId || !byId.has(c.scryfallId));
+      const { byName } = await resolveCards(
+        needName.map((c) => c.name),
+        setProgress,
+      );
+
+      const resolved: ResolvedEntry[] = [];
+      const notFound: string[] = [];
+      for (const c of imported.cards) {
+        const card = (c.scryfallId ? byId.get(c.scryfallId) : undefined) ?? byName.get(c.name);
+        if (card) {
+          resolved.push({
+            line: {
+              raw: c.name,
+              name: c.name,
+              quantity: c.quantity,
+              isCommander: c.isCommander,
+              categories: c.categories,
+              setCode: c.set,
+              collectorNumber: c.collectorNumber,
+            },
+            card,
+            isCommander: c.isCommander,
+          });
+        } else {
+          notFound.push(c.name);
+        }
+      }
+      setEntries(resolved);
+      setUnresolved(notFound);
+      setParseWarnings([]);
+      setStage("review");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't import that deck.");
+      setStage("input");
+    }
   };
 
   const doImport = async () => {
@@ -264,6 +336,33 @@ export default function ImportPage() {
 
         {stage === "input" && (
           <div className="mt-6 flex flex-col gap-3">
+            {/* Import from an Archidekt / Moxfield URL */}
+            <div className="rounded-lg border border-stone-800 bg-stone-950 p-3">
+              <div className="mb-2 text-xs font-bold tracking-wide text-emerald-500 uppercase">
+                Import from a URL
+              </div>
+              <div className="flex gap-2">
+                <input
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && void doImportUrl()}
+                  placeholder="Paste an Archidekt or Moxfield deck link…"
+                  className="w-full rounded-md border border-stone-700 bg-stone-900 px-3 py-2 text-sm outline-none focus:border-emerald-600"
+                />
+                <button
+                  onClick={() => void doImportUrl()}
+                  disabled={!url.trim()}
+                  className="shrink-0 rounded-md bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-600 disabled:opacity-40"
+                >
+                  Fetch deck
+                </button>
+              </div>
+              <p className="mt-1.5 text-[10px] text-stone-600">
+                Pulls cards, commanders, and categories. Archidekt works directly; Moxfield is
+                best-effort (if it’s blocked, use their “Export” and paste below).
+              </p>
+            </div>
+
             {/* Quick-launch a saved deck */}
             {savedDecks && savedDecks.length > 0 && (
               <div className="rounded-lg border border-stone-800 bg-stone-950 p-3">

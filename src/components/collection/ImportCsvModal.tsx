@@ -36,7 +36,7 @@ export function ImportCsvModal({
       const p = parseCollectionCsv(text);
       if (p.rows.length === 0) {
         setError(
-          "No importable rows found. The CSV needs a 'Scryfall ID' column (Mana Flood / Archidekt exports have one).",
+          "No importable rows found — the CSV needs at least a card name column (a Scryfall ID, or set + collector number, makes matching exact).",
         );
         return;
       }
@@ -61,7 +61,17 @@ export function ImportCsvModal({
     }
   };
 
-  const uniqueIds = parsed ? new Set(parsed.rows.map((r) => r.scryfallId)).size : 0;
+  // Unique printings to resolve = distinct identifier per row (id, set+cn, or name).
+  const uniqueIds = parsed
+    ? new Set(
+        parsed.rows.map(
+          (r) =>
+            r.scryfallId ||
+            (r.setCode && r.collectorNumber ? `${r.setCode}:${r.collectorNumber}` : "") ||
+            r.name.toLowerCase(),
+        ),
+      ).size
+    : 0;
   const totalCards = parsed ? parsed.rows.reduce((n, r) => n + r.quantity, 0) : 0;
   const etaSec = Math.round(Math.ceil(uniqueIds / 75) * 0.55);
 
@@ -86,9 +96,9 @@ export function ImportCsvModal({
         {stage === "pick" && (
           <div className="flex flex-col gap-3">
             <p className="text-xs text-stone-500">
-              Works with exports that include a <span className="font-semibold">Scryfall ID</span>{" "}
-              column — Mana Flood, Archidekt, and Moxfield all do. Quantity, foil/variant, and
-              collector number are read when present.
+              Works with CSV exports from most apps — Mana Flood, ManaBox, Moxfield, Archidekt,
+              Deckbox, TCGplayer, Dragon Shield, and more. Cards match by Scryfall ID when present,
+              otherwise by set + collector number or name. Quantity and foil/finish are read too.
             </p>
             <button
               onClick={() => fileInput.current?.click()}
@@ -120,7 +130,7 @@ export function ImportCsvModal({
                 <span>{totalCards.toLocaleString()} total cards</span>
                 <span>{uniqueIds.toLocaleString()} unique printings</span>
                 {parsed.skipped.length > 0 && (
-                  <span className="text-amber-400">{parsed.skipped.length} skipped (no ID)</span>
+                  <span className="text-amber-400">{parsed.skipped.length} skipped (no name/ID)</span>
                 )}
               </div>
             </div>
@@ -206,7 +216,7 @@ export function ImportCsvModal({
             {(result.unresolvedIds > 0 || result.skippedRows > 0) && (
               <p className="text-[11px] text-amber-400">
                 {result.unresolvedIds > 0 && `${result.unresolvedIds} printing(s) not found on Scryfall. `}
-                {result.skippedRows > 0 && `${result.skippedRows} row(s) skipped (no Scryfall ID).`}
+                {result.skippedRows > 0 && `${result.skippedRows} row(s) skipped (no name/ID).`}
               </p>
             )}
             <div className="flex justify-end">

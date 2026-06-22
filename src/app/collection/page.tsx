@@ -6,6 +6,8 @@ import type { ScryCard } from "@/types";
 import { finishPrice, getRepo, type CollectionCard } from "@/lib/repo";
 import { collectionStats, enrichCollectionFromOracle, setCollectionQty } from "@/lib/cards/collection";
 import { adjustWishlist } from "@/lib/cards/wishlist";
+import { collectionToCsv } from "@/lib/cards/collectionCsv";
+import { downloadTextFile } from "@/lib/download";
 import type { WishlistCard } from "@/lib/repo";
 import { getCardDbStatus, fetchAllSets, type SetInfo } from "@/lib/cards/carddb";
 import { groupBySet } from "@/lib/cards/sets";
@@ -249,6 +251,21 @@ export default function CollectionPage() {
               className="shrink-0 rounded-md border border-stone-700 bg-stone-900 px-4 py-2 text-sm font-semibold text-stone-300 hover:bg-stone-800"
             >
               📥 Import CSV
+            </button>
+            <button
+              onClick={() => {
+                const owned = (cards ?? []).filter((c) => c.quantity > 0);
+                if (owned.length === 0) return;
+                downloadTextFile(
+                  `collection-${new Date().toISOString().slice(0, 10)}.csv`,
+                  collectionToCsv(owned),
+                  "text/csv",
+                );
+              }}
+              disabled={(cards?.length ?? 0) === 0}
+              className="shrink-0 rounded-md border border-stone-700 bg-stone-900 px-4 py-2 text-sm font-semibold text-stone-300 hover:bg-stone-800 disabled:opacity-40"
+            >
+              📤 Export CSV
             </button>
           </div>
         )}

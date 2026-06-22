@@ -96,26 +96,35 @@ function findCol(headers: string[], candidates: string[]): number {
 
 export function mapColumns(headers: string[]): ColumnMap {
   return {
-    quantity: findCol(headers, ["quantity", "count", "qty"]),
-    name: findCol(headers, ["card name", "name"]),
-    scryfallId: findCol(headers, ["scryfall id", "scryfallid", "scryfall_id", "id"]),
-    finish: findCol(headers, ["foil/variant", "foil", "finish", "printing", "variant"]),
-    setName: findCol(headers, ["edition name", "edition", "set name", "set"]),
-    setCode: findCol(headers, ["set code", "edition code", "setcode"]),
-    collectorNumber: findCol(headers, ["collector number", "collector_number", "card number", "number"]),
+    quantity: findCol(headers, ["quantity", "count", "qty", "card count"]),
+    name: findCol(headers, ["card name", "name", "card"]),
+    scryfallId: findCol(headers, ["scryfall id", "scryfallid", "scryfall_id", "scryfall", "id"]),
+    finish: findCol(headers, ["foil/variant", "foil", "finish", "printing", "variant", "foiling"]),
+    setName: findCol(headers, ["edition name", "edition", "set name", "set", "expansion"]),
+    setCode: findCol(headers, ["set code", "edition code", "setcode", "set_code"]),
+    collectorNumber: findCol(headers, [
+      "collector number",
+      "collector_number",
+      "card number",
+      "number",
+      "cn",
+      "collector",
+    ]),
   };
 }
 
 function parseFinish(raw: string | undefined): CardFinish {
   const v = (raw ?? "").trim().toLowerCase();
-  if (!v || v === "normal" || v === "nonfoil" || v === "non-foil") return "nonfoil";
+  if (!v || v === "normal" || v === "nonfoil" || v === "non-foil" || v === "no" || v === "false")
+    return "nonfoil";
   if (v.includes("etched")) return "etched";
-  if (v.includes("foil")) return "foil";
+  if (v.includes("foil") || v === "yes" || v === "true" || v === "1") return "foil";
   return "nonfoil";
 }
 
 export interface ParsedCsvRow {
-  scryfallId: string;
+  /** Present when the export includes a Scryfall id (most precise). */
+  scryfallId?: string;
   name: string;
   quantity: number;
   finish: CardFinish;
@@ -126,7 +135,7 @@ export interface ParsedCsvRow {
 
 export interface CsvParseResult {
   rows: ParsedCsvRow[];
-  /** Rows lacking a Scryfall ID (can't be resolved reliably). */
+  /** Rows with no usable identifier (no id and no name). */
   skipped: { name: string; reason: string }[];
   totalRows: number;
 }
@@ -142,16 +151,17 @@ export function parseCollectionCsv(text: string): CsvParseResult {
   for (let r = 1; r < grid.length; r++) {
     const cells = grid[r]!;
     const get = (idx: number) => (idx >= 0 ? (cells[idx] ?? "").trim() : "");
-    const name = get(cols.name) || "(unnamed)";
+    const name = get(cols.name);
     const scryfallId = get(cols.scryfallId);
     const quantity = parseInt(get(cols.quantity) || "1", 10) || 1;
-    if (!scryfallId) {
-      skipped.push({ name, reason: "no Scryfall ID" });
+    // A row is usable if it has a Scryfall id OR a name (to resolve by).
+    if (!scryfallId && !name) {
+      skipped.push({ name: "(unnamed)", reason: "no Scryfall ID or card name" });
       continue;
     }
     rows.push({
-      scryfallId,
-      name,
+      scryfallId: scryfallId || undefined,
+      name: name || "(unnamed)",
       quantity,
       finish: parseFinish(get(cols.finish)),
       setName: get(cols.setName) || undefined,
@@ -179,19 +189,36 @@ export interface ImportResult {
   skippedRows: number;
 }
 
-async function resolveByIds(ids: string[]): Promise<Map<string, ScryCard>> {
-  const res = await fetch("/api/cards/by-ids", {
+type Identifier =
+  | { id: string }
+  | { name: string }
+  | { set: string; collector_number: string }
+  | { name: string; set: string };
+
+/** Best Scryfall identifier for a row: id → set+collector → name+set → name. */
+function rowIdentifier(row: ParsedCsvRow): Identifier {
+  if (row.scryfallId) return { id: row.scryfallId };
+  if (row.setCode && row.collectorNumber)
+    return { set: row.setCode.toLowerCase(), collector_number: row.collectorNumber };
+  if (row.setCode && row.name !== "(unnamed)") return { name: row.name, set: row.setCode.toLowerCase() };
+  return { name: row.name };
+}
+
+async function resolveIdentifierBatch(batch: Identifier[]): Promise<ScryCard[]> {
+  const res = await fetch("/api/cards/identify", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ids }),
+    body: JSON.stringify({ identifiers: batch }),
   });
-  if (!res.ok) return new Map();
+  if (!res.ok) return [];
   const data = (await res.json()) as { cards: ScryCard[] };
-  return new Map(data.cards.map((c) => [c.id, c]));
+  return data.cards;
 }
 
 /**
- * Resolve the parsed rows and write them to the collection.
+ * Resolve the parsed rows and write them to the collection. Resolves by
+ * Scryfall id, set+collector number, name+set, or name — so exports from many
+ * apps work, not just those with a Scryfall ID column.
  * `mode: "replace"` clears the existing collection first.
  */
 export async function importCollection(
@@ -200,30 +227,48 @@ export async function importCollection(
   onProgress?: (p: ImportProgress) => void,
 ): Promise<ImportResult> {
   const repo = getRepo();
-  const uniqueIds = [...new Set(parsed.rows.map((r) => r.scryfallId))];
-  const byId = new Map<string, ScryCard>();
 
+  // Dedupe identifiers across rows so we resolve each printing once.
+  const idents = new Map<string, Identifier>();
+  for (const row of parsed.rows) idents.set(JSON.stringify(rowIdentifier(row)), rowIdentifier(row));
+  const uniqueIdents = [...idents.values()];
+
+  const resolvedCards: ScryCard[] = [];
   const BATCH = 75;
-  for (let i = 0; i < uniqueIds.length; i += BATCH) {
-    const batch = uniqueIds.slice(i, i + BATCH);
-    const resolved = await resolveByIds(batch);
-    for (const [id, card] of resolved) byId.set(id, card);
+  for (let i = 0; i < uniqueIdents.length; i += BATCH) {
+    resolvedCards.push(...(await resolveIdentifierBatch(uniqueIdents.slice(i, i + BATCH))));
     onProgress?.({
       phase: "resolve",
-      resolved: Math.min(i + BATCH, uniqueIds.length),
-      total: uniqueIds.length,
+      resolved: Math.min(i + BATCH, uniqueIdents.length),
+      total: uniqueIdents.length,
     });
   }
 
-  // Cache resolved printings for offline reuse.
-  await cacheCards([...byId.values()]).catch(() => {});
+  // Cache resolved printings, and index them for row → card matching.
+  await cacheCards(resolvedCards).catch(() => {});
+  const byId = new Map<string, ScryCard>();
+  const bySetCn = new Map<string, ScryCard>();
+  const byName = new Map<string, ScryCard>();
+  for (const c of resolvedCards) {
+    byId.set(c.id, c);
+    if (c.set && c.collector_number) bySetCn.set(`${c.set}:${c.collector_number}`, c);
+    if (!byName.has(c.name.toLowerCase())) byName.set(c.name.toLowerCase(), c);
+  }
+  const matchRow = (row: ParsedCsvRow): ScryCard | undefined => {
+    if (row.scryfallId && byId.has(row.scryfallId)) return byId.get(row.scryfallId);
+    if (row.setCode && row.collectorNumber) {
+      const hit = bySetCn.get(`${row.setCode.toLowerCase()}:${row.collectorNumber}`);
+      if (hit) return hit;
+    }
+    return byName.get(row.name.toLowerCase());
+  };
 
   // Build entries, merging duplicate (printing + finish) rows by summing qty.
   const entries = new Map<string, CollectionCard>();
   let unresolvedIds = 0;
   const now = Date.now();
   for (const row of parsed.rows) {
-    const card = byId.get(row.scryfallId);
+    const card = matchRow(row);
     if (!card) {
       unresolvedIds += 1;
       continue;
@@ -250,7 +295,7 @@ export async function importCollection(
     }
   }
 
-  onProgress?.({ phase: "save", resolved: uniqueIds.length, total: uniqueIds.length });
+  onProgress?.({ phase: "save", resolved: uniqueIdents.length, total: uniqueIdents.length });
 
   const list = [...entries.values()];
   if (mode === "replace") {
@@ -266,7 +311,7 @@ export async function importCollection(
     await repo.saveCollectionEntries(list);
   }
 
-  onProgress?.({ phase: "done", resolved: uniqueIds.length, total: uniqueIds.length });
+  onProgress?.({ phase: "done", resolved: uniqueIdents.length, total: uniqueIdents.length });
   return {
     added: list.length,
     cards: list.reduce((n, e) => n + e.quantity, 0),
