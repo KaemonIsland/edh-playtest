@@ -135,7 +135,7 @@ export function finishPrice(card: import("@/types").ScryCard, finish: CardFinish
 }
 
 export interface Repo {
-  readonly mode: "local" | "supabase";
+  readonly mode: "local" | "postgres" | "supabase";
 
   listDecks(): Promise<ShowcaseDeckMeta[]>;
   getDeck(id: string): Promise<ShowcaseDeck | null>;

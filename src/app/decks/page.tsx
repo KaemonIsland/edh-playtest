@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { getRepo, type ShowcaseDeckMeta } from "@/lib/repo";
+import { MigrationBanner } from "@/components/MigrationBanner";
 import {
   getCardDbStatus,
   syncCardDatabase,
@@ -61,6 +62,7 @@ export default function DecksPage() {
   return (
     <div className="min-h-dvh bg-[#08080a] text-stone-200">
       <div className="mx-auto max-w-5xl px-4 py-10">
+        <MigrationBanner />
         <div className="mb-4 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">My decks</h1>
@@ -214,9 +216,9 @@ export default function DecksPage() {
         </div>
 
         <p className="mt-6 text-center text-[10px] text-stone-600">
-          {getRepo().mode === "local"
-            ? "Stored locally in this browser (IndexedDB). Add Supabase keys for a shared backend."
-            : "Stored in Supabase."}{" "}
+          {getRepo().mode === "supabase"
+            ? "Stored in Supabase."
+            : "Stored in your local Postgres database. Add Supabase keys for a hosted/shared backend."}{" "}
           Card data and images provided by Scryfall.
         </p>
       </div>

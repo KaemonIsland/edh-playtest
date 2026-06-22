@@ -13,7 +13,7 @@ export function CommentsPanel({ deckId }: { deckId: string }) {
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
-    if (repo.mode === "supabase") setComments(await repo.listComments(deckId));
+    if (repo.mode !== "local") setComments(await repo.listComments(deckId));
   }, [deckId, repo]);
 
   useEffect(() => {

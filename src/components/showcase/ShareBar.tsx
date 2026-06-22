@@ -65,7 +65,7 @@ export function ShareBar({ deck }: { deck: Deck }) {
           </button>
         ))}
       </div>
-      {getRepo().mode === "local" && (
+      {getRepo().mode !== "supabase" && (
         <span className="text-[10px] text-stone-600">
           Local mode — link works on this machine; add Supabase keys for public sharing.
         </span>

@@ -15,6 +15,7 @@ import { SetGrid, type SetGridItem } from "@/components/collection/SetGrid";
 import { CardSearchModal } from "@/components/builder/CardSearchModal";
 import { CardDetailModal } from "@/components/builder/CardDetailModal";
 import { ImportCsvModal } from "@/components/collection/ImportCsvModal";
+import { MigrationBanner } from "@/components/MigrationBanner";
 import {
   FilterSidebar,
   emptyFilters,
@@ -157,6 +158,8 @@ export default function CollectionPage() {
           <Link href="/decks" className="hover:text-white">My decks</Link>
           <span className="font-semibold text-stone-200">Collection</span>
         </nav>
+
+        <MigrationBanner />
 
         {/* Collection / Wishlist toggle */}
         <div className="mb-4 inline-flex gap-0.5 rounded-lg bg-stone-900 p-0.5">
@@ -389,7 +392,8 @@ export default function CollectionPage() {
         {getCardDbStatus().syncedAt
           ? "Card search uses your synced local database."
           : "Tip: sync the card database on the My decks page for faster offline search."}{" "}
-        Prices are Scryfall (TCGplayer). {getRepo().mode === "local" ? "Stored locally." : "Stored in Supabase."}
+        Prices are Scryfall (TCGplayer).{" "}
+        {getRepo().mode === "supabase" ? "Stored in Supabase." : "Stored in your local database."}
       </p>
 
       {searchModal !== null && (
