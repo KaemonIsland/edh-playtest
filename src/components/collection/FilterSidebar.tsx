@@ -33,6 +33,9 @@ export interface CardFilters {
   text: string;
   /** Only cards that can be a commander (legendary creature / "can be your commander"). */
   commanderOnly: boolean;
+  /** USD price bounds (nonfoil), as strings; "" = unbounded. */
+  priceMin: string;
+  priceMax: string;
 }
 
 export function emptyFilters(): CardFilters {
@@ -50,6 +53,8 @@ export function emptyFilters(): CardFilters {
     rarities: [],
     text: "",
     commanderOnly: false,
+    priceMin: "",
+    priceMax: "",
   };
 }
 
@@ -72,7 +77,9 @@ export function filtersActive(f: CardFilters): boolean {
       f.power ||
       f.toughness ||
       f.rarities.length ||
-      f.commanderOnly,
+      f.commanderOnly ||
+      f.priceMin ||
+      f.priceMax,
   );
 }
 
@@ -129,6 +136,14 @@ export function matchesFilters(card: ScryCard, f: CardFilters): boolean {
   }
   if (f.rarities.length && !f.rarities.includes((card.rarity ?? "").toLowerCase())) return false;
   if (f.commanderOnly && !canBeCommander(card)) return false;
+  if (f.priceMin.trim() || f.priceMax.trim()) {
+    // Filter on the card's nonfoil USD price; unknown prices fail any bound.
+    const price = num(card.prices?.usd ?? undefined);
+    const min = parseFloat(f.priceMin);
+    const max = parseFloat(f.priceMax);
+    if (Number.isFinite(min) && (price === null || price < min)) return false;
+    if (Number.isFinite(max) && (price === null || price > max)) return false;
+  }
   return true;
 }
 
@@ -317,6 +332,32 @@ export function FilterSidebar({
       />
 
       <div>
+        <div className="mb-1 text-[10px] font-bold tracking-wide text-stone-500 uppercase">
+          Price (USD)
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-stone-500">$</span>
+          <input
+            value={filters.priceMin}
+            onChange={(e) => set({ priceMin: e.target.value })}
+            placeholder="min"
+            inputMode="decimal"
+            className="w-full rounded-md border border-stone-700 bg-stone-900 px-2 py-1.5 text-xs outline-none focus:border-emerald-600"
+          />
+          <span className="text-stone-600">–</span>
+          <span className="text-xs text-stone-500">$</span>
+          <input
+            value={filters.priceMax}
+            onChange={(e) => set({ priceMax: e.target.value })}
+            placeholder="max"
+            inputMode="decimal"
+            className="w-full rounded-md border border-stone-700 bg-stone-900 px-2 py-1.5 text-xs outline-none focus:border-emerald-600"
+          />
+        </div>
+        <p className="mt-1 text-[10px] text-stone-600">Nonfoil market price (TCGplayer).</p>
+      </div>
+
+      <div>
         <div className="mb-1 text-[10px] font-bold tracking-wide text-stone-500 uppercase">Rarity</div>
         <div className="flex flex-wrap gap-1">
           {RARITIES.map((r) => (
@@ -352,7 +393,8 @@ export function FilterSidebar({
           <option value="newest">Newest set</option>
           <option value="name">Name</option>
           <option value="cmc">Mana value</option>
-          <option value="value">Price</option>
+          <option value="value">Price (high → low)</option>
+          <option value="value-asc">Price (low → high)</option>
         </select>
       </div>
     </div>

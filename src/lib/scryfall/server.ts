@@ -82,6 +82,14 @@ export function toScryCard(raw: RawCard): ScryCard {
     released_at: raw.released_at,
     rarity: raw.rarity,
     keywords: raw.keywords,
+    all_parts: Array.isArray(raw.all_parts)
+      ? raw.all_parts.map((p: RawCard) => ({
+          id: p.id,
+          component: p.component,
+          name: p.name,
+          type_line: p.type_line,
+        }))
+      : undefined,
   };
 }
 

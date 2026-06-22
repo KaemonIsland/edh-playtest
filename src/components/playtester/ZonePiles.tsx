@@ -1,10 +1,12 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { useDraggable } from "@dnd-kit/core";
-import type { Zone } from "@/types";
+import type { ScryCard, Zone } from "@/types";
 import { PLAYER_ID, useGameStore } from "@/lib/game/store";
 import { useUiStore, type MenuItem } from "@/lib/game/uiStore";
+import { resolveDeckTokens } from "@/lib/game/tokens";
 import { CardImage } from "@/components/cards/CardImage";
 import { buildCardMenu } from "./cardMenu";
 
@@ -283,7 +285,98 @@ function CommanderCard({
   );
 }
 
-/** Right-hand column: Library / Graveyard / Exile piles + command zone. */
+/** The deck's possible tokens (from Scryfall all_parts) as a quick-create pile. */
+function TokensPile() {
+  const deck = useGameStore((s) => s.deck);
+  const createTokenFromCard = useGameStore((s) => s.createTokenFromCard);
+  const setPreview = useUiStore((s) => s.setPreview);
+  const [tokens, setTokens] = useState<ScryCard[] | null>(null);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setTokens(null);
+    if (deck) {
+      void resolveDeckTokens(deck).then((t) => {
+        if (!cancelled) setTokens(t);
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [deck]);
+
+  // Hide the pile entirely when the deck makes no tokens.
+  if (tokens !== null && tokens.length === 0) return null;
+
+  return (
+    <div className="flex flex-col items-center gap-1 rounded-lg border border-sky-900/40 bg-stone-900/60 p-2">
+      <span className="w-full text-[11px] font-semibold tracking-wide text-sky-400/80">Tokens</span>
+      <button
+        className="relative"
+        onClick={() => tokens && tokens.length > 0 && setOpen(true)}
+        title={tokens === null ? "Finding the deck's tokens…" : "Create a token"}
+      >
+        <div className="flex h-[112px] w-[80px] items-center justify-center rounded-md border border-dashed border-sky-800/60 bg-gradient-to-br from-sky-950/40 to-stone-950 text-2xl">
+          {tokens === null ? "…" : "🪙"}
+        </div>
+        <span className="absolute -right-1.5 -bottom-1.5 rounded-full bg-stone-700 px-1.5 py-0.5 text-[10px] font-bold text-stone-100 shadow">
+          {tokens?.length ?? 0}
+        </span>
+      </button>
+
+      {open && tokens && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          onClick={() => setOpen(false)}
+        >
+          <div
+            className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-stone-700 bg-stone-950 p-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-bold text-stone-200">
+                Deck tokens <span className="font-normal text-stone-500">({tokens.length})</span>
+              </h2>
+              <button
+                onClick={() => setOpen(false)}
+                className="rounded px-2 py-0.5 text-stone-500 hover:bg-stone-800 hover:text-stone-200"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="mb-3 text-[11px] text-stone-500">
+              Click a token to put it onto your battlefield. (Detected from your cards via Scryfall.)
+            </p>
+            <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
+              {tokens.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => {
+                    createTokenFromCard(t);
+                    setOpen(false);
+                  }}
+                  className="group flex flex-col gap-1 text-left"
+                  onMouseEnter={() => setPreview({ card: t, flipped: 0 })}
+                  onMouseLeave={() => setPreview(null)}
+                  title={`Create ${t.name}`}
+                >
+                  <CardImage
+                    card={t}
+                    className="aspect-[5/7] w-full transition group-hover:ring-2 group-hover:ring-sky-500"
+                  />
+                  <span className="truncate text-[10px] text-stone-400">{t.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Right-hand column: Library / Graveyard / Exile piles + command zone + tokens. */
 export function ZonePiles() {
   return (
     <div className="flex h-full w-[120px] flex-col justify-start gap-2 overflow-y-auto py-1">
@@ -291,6 +384,7 @@ export function ZonePiles() {
       <ZonePile zone="graveyard" label="Graveyard" topVisible={true} />
       <ZonePile zone="exile" label="Exile" topVisible={true} />
       <CommandZone />
+      <TokensPile />
     </div>
   );
 }

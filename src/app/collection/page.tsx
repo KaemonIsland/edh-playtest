@@ -82,7 +82,7 @@ export default function CollectionPage() {
     const filtered = scopeCards.filter((c) => matchesFilters(c.card, filters));
     // Precompute stack value so the comparator's price lookup is O(1), not O(n).
     const priceByCard = new Map<ScryCard, number>();
-    if (sort === "value") {
+    if (sort.startsWith("value")) {
       for (const c of filtered) priceByCard.set(c.card, (finishPrice(c.card, c.finish) ?? 0) * c.quantity);
     }
     const cmp = cardComparator(sort, (sc) => priceByCard.get(sc) ?? 0);

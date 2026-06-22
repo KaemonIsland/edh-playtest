@@ -47,7 +47,7 @@ export function byColor(a: ScryCard, b: ScryCard): number {
   return a.name.localeCompare(b.name);
 }
 
-export type CardSort = "color" | "newest" | "name" | "cmc" | "value";
+export type CardSort = "color" | "newest" | "name" | "cmc" | "value" | "value-asc";
 
 export function cardComparator(
   sort: CardSort,
@@ -63,6 +63,8 @@ export function cardComparator(
       return (a, b) => a.cmc - b.cmc || a.name.localeCompare(b.name);
     case "value":
       return (a, b) => (priceOf?.(b) ?? 0) - (priceOf?.(a) ?? 0) || a.name.localeCompare(b.name);
+    case "value-asc":
+      return (a, b) => (priceOf?.(a) ?? 0) - (priceOf?.(b) ?? 0) || a.name.localeCompare(b.name);
     default:
       return byColor;
   }

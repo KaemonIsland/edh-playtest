@@ -61,6 +61,8 @@ export interface ScryCard {
   released_at?: string;
   rarity?: string;
   keywords?: string[];
+  /** Related cards (tokens, meld parts, etc.) — used to find a deck's tokens. */
+  all_parts?: { id: string; component: string; name: string; type_line: string }[];
 }
 
 // ---------------------------------------------------------------------------

@@ -79,6 +79,14 @@ function slim(raw: RawCard): ScryCard {
     released_at: raw.released_at,
     rarity: raw.rarity,
     keywords: raw.keywords,
+    all_parts: Array.isArray(raw.all_parts)
+      ? raw.all_parts.map((p: { id: string; component: string; name: string; type_line: string }) => ({
+          id: p.id,
+          component: p.component,
+          name: p.name,
+          type_line: p.type_line,
+        }))
+      : undefined,
   };
 }
 
@@ -346,4 +354,21 @@ export async function fetchSetCards(code: string): Promise<ScryCard[]> {
   if (!res.ok) return [];
   const data = (await res.json()) as { cards: ScryCard[] };
   return data.cards;
+}
+
+/** Resolve specific printings by Scryfall id (batched at 75). */
+export async function fetchCardsByIds(ids: string[]): Promise<ScryCard[]> {
+  const unique = [...new Set(ids)].filter(Boolean);
+  const out: ScryCard[] = [];
+  for (let i = 0; i < unique.length; i += 75) {
+    const res = await fetch("/api/cards/by-ids", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: unique.slice(i, i + 75) }),
+    });
+    if (!res.ok) continue;
+    const data = (await res.json()) as { cards: ScryCard[] };
+    out.push(...data.cards);
+  }
+  return out;
 }

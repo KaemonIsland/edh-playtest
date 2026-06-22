@@ -131,7 +131,8 @@ export default function AllCardsPage() {
   const visibleCards = useMemo(() => {
     const filtered = (setCards ?? []).filter((c) => matchesFilters(c, filters));
     const priceByCard = new Map<ScryCard, number>();
-    if (sort === "value") for (const c of filtered) priceByCard.set(c, finishPrice(c, "nonfoil") ?? 0);
+    if (sort.startsWith("value"))
+      for (const c of filtered) priceByCard.set(c, finishPrice(c, "nonfoil") ?? 0);
     const cmp = cardComparator(sort, (sc) => priceByCard.get(sc) ?? 0);
     return [...filtered].sort(cmp);
   }, [setCards, filters, sort]);
