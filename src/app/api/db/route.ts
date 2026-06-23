@@ -33,6 +33,10 @@ const OPS = new Set([
   "getWishlistEntry",
   "saveWishlistEntry",
   "removeWishlistEntry",
+  "listUnresolvedImports",
+  "addUnresolvedImports",
+  "removeUnresolvedImport",
+  "clearUnresolvedImports",
 ]);
 
 /**

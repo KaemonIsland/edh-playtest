@@ -10,6 +10,7 @@ import type {
   Repo,
   ShowcaseDeck,
   ShowcaseDeckMeta,
+  UnresolvedImport,
   WishlistCard,
 } from "./types";
 
@@ -115,5 +116,18 @@ export class ServerRepo implements Repo {
   }
   removeWishlistEntry(oracleId: string): Promise<void> {
     return this.call("removeWishlistEntry", [oracleId]);
+  }
+
+  listUnresolvedImports(): Promise<UnresolvedImport[]> {
+    return this.call("listUnresolvedImports");
+  }
+  addUnresolvedImports(items: UnresolvedImport[]): Promise<void> {
+    return this.call("addUnresolvedImports", [items]);
+  }
+  removeUnresolvedImport(id: string): Promise<void> {
+    return this.call("removeUnresolvedImport", [id]);
+  }
+  clearUnresolvedImports(): Promise<void> {
+    return this.call("clearUnresolvedImports");
   }
 }

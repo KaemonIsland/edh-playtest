@@ -6,6 +6,7 @@ import type {
   GameRecord,
   Primer,
   ShowcaseDeck,
+  UnresolvedImport,
   WishlistCard,
 } from "@/lib/repo/types";
 
@@ -47,6 +48,20 @@ export interface OracleCard {
   card: ScryCard;
 }
 
+/**
+ * MTGJSON prices for one printing, keyed by Scryfall id. Stored per provider +
+ * finish so the UI's TCGplayer/Card Kingdom toggle is just a field pick. Values
+ * are USD; missing providers/finishes are simply absent.
+ */
+export interface CardPriceRow {
+  /** Scryfall printing id. */
+  id: string;
+  tcg?: number;
+  tcgFoil?: number;
+  ck?: number;
+  ckFoil?: number;
+}
+
 const db = new Dexie("edh-playtest") as Dexie & {
   cards: EntityTable<CachedCard, "key">;
   snapshots: EntityTable<GameSnapshot, "id">;
@@ -58,6 +73,8 @@ const db = new Dexie("edh-playtest") as Dexie & {
   oracle: EntityTable<OracleCard, "oracle_id">;
   collection: EntityTable<CollectionCard, "id">;
   wishlist: EntityTable<WishlistCard, "oracleId">;
+  unresolvedImports: EntityTable<UnresolvedImport, "id">;
+  prices: EntityTable<CardPriceRow, "id">;
 };
 
 db.version(1).stores({
@@ -115,6 +132,35 @@ db.version(6).stores({
   oracle: "oracle_id, nameKey",
   collection: "id, oracleId, updatedAt",
   wishlist: "oracleId, updatedAt",
+});
+
+db.version(7).stores({
+  cards: "key, card.id, fetchedAt",
+  snapshots: "++id, savedAt, deckName",
+  edhrecDecks: "slug, fetchedAt",
+  showcaseDecks: "id, name, updatedAt",
+  primers: "deckId",
+  deckVersions: "++id, deckId, date",
+  games: "++id, deckId, date",
+  oracle: "oracle_id, nameKey",
+  collection: "id, oracleId, updatedAt",
+  wishlist: "oracleId, updatedAt",
+  unresolvedImports: "id, createdAt",
+});
+
+db.version(8).stores({
+  cards: "key, card.id, fetchedAt",
+  snapshots: "++id, savedAt, deckName",
+  edhrecDecks: "slug, fetchedAt",
+  showcaseDecks: "id, name, updatedAt",
+  primers: "deckId",
+  deckVersions: "++id, deckId, date",
+  games: "++id, deckId, date",
+  oracle: "oracle_id, nameKey",
+  collection: "id, oracleId, updatedAt",
+  wishlist: "oracleId, updatedAt",
+  unresolvedImports: "id, createdAt",
+  prices: "id",
 });
 
 export { db };

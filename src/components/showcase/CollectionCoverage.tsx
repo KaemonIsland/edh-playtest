@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Deck, ScryCard } from "@/types";
 import { includedEntries } from "@/types";
-import { finishPrice, getRepo } from "@/lib/repo";
+import { getRepo } from "@/lib/repo";
 import { addManyToWishlist } from "@/lib/cards/wishlist";
+import { loadPriceIndex, priceOf, usePriceStore } from "@/lib/cards/pricing";
 
 interface MissingCard {
   oracleId: string;
@@ -21,8 +22,11 @@ interface MissingCard {
 export function CollectionCoverage({ deck }: { deck: Deck }) {
   const [ownedByOracle, setOwnedByOracle] = useState<Map<string, number> | null>(null);
   const [added, setAdded] = useState<string | null>(null);
+  const priceSource = usePriceStore((s) => s.source);
+  const priceVersion = usePriceStore((s) => s.version);
 
   useEffect(() => {
+    void loadPriceIndex();
     void getRepo()
       .listCollection()
       .then((cards) => {
@@ -63,7 +67,7 @@ export function CollectionCoverage({ deck }: { deck: Deck }) {
           have,
           card,
           proxy,
-          unitPrice: finishPrice(card, "nonfoil"),
+          unitPrice: priceOf(card, "nonfoil"),
         });
       }
     }
@@ -79,7 +83,8 @@ export function CollectionCoverage({ deck }: { deck: Deck }) {
       if (m.unitPrice !== null) buyCost += m.unitPrice * shortfall;
     }
     return { ownedCount, neededCount, missing, buyCost, buyCount };
-  }, [ownedByOracle, deck]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ownedByOracle, deck, priceSource, priceVersion]);
 
   if (!report) return <p className="text-xs text-stone-600">Checking your collection…</p>;
 

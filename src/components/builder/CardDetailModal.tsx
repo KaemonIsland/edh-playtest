@@ -164,10 +164,18 @@ export function CardDetailModal({
 
   useEffect(() => {
     if (tab === "rulings" && rulings === null) {
-      void fetch(`/api/cards/rulings?id=${encodeURIComponent(shown.id)}`)
-        .then((r) => (r.ok ? r.json() : { rulings: [] }))
-        .then((d: { rulings: Ruling[] }) => setRulings(d.rulings))
-        .catch(() => setRulings([]));
+      // Prefer rulings bundled with the synced MTGJSON card; fall back to the
+      // Scryfall rulings API when the DB isn't synced (or this printing lacks an id).
+      if (shown.rulings?.length) {
+        setRulings(shown.rulings.map((r) => ({ published_at: r.date, comment: r.text })));
+      } else if (shown.id) {
+        void fetch(`/api/cards/rulings?id=${encodeURIComponent(shown.id)}`)
+          .then((r) => (r.ok ? r.json() : { rulings: [] }))
+          .then((d: { rulings: Ruling[] }) => setRulings(d.rulings))
+          .catch(() => setRulings([]));
+      } else {
+        setRulings([]);
+      }
     }
     if (tab === "indecks" && inDecks === null) {
       void refreshInDecks();

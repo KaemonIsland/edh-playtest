@@ -3,7 +3,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { ScryCard } from "@/types";
-import { finishPrice, getRepo, type CollectionCard } from "@/lib/repo";
+import { getRepo, type CollectionCard } from "@/lib/repo";
+import {
+  loadPriceIndex,
+  priceOf,
+  usePriceStore,
+  PRICE_SOURCE_LABEL,
+  getPriceSyncStatus,
+  type PriceSource,
+} from "@/lib/cards/pricing";
 import { collectionStats, enrichCollectionFromOracle, setCollectionQty } from "@/lib/cards/collection";
 import { adjustWishlist } from "@/lib/cards/wishlist";
 import { collectionToCsv } from "@/lib/cards/collectionCsv";
@@ -42,11 +50,20 @@ export default function CollectionPage() {
   const [searchModal, setSearchModal] = useState<string | null>(null);
   const [detailCard, setDetailCard] = useState<ScryCard | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [unresolvedCount, setUnresolvedCount] = useState(0);
+  // Re-render / recompute card values when the price source or index changes.
+  const priceSource = usePriceStore((s) => s.source);
+  const priceVersion = usePriceStore((s) => s.version);
+
+  useEffect(() => {
+    void loadPriceIndex();
+  }, []);
 
   const refresh = useCallback(async () => {
     const list = await getRepo().listCollection();
     setCards(list);
     void getRepo().listWishlist().then(setWishlist);
+    void getRepo().listUnresolvedImports().then((u) => setUnresolvedCount(u.length));
     // Backfill rarity/keywords/release date on older rows (best-effort).
     const enriched = await enrichCollectionFromOracle(list);
     if (enriched !== list) setCards(enriched);
@@ -54,9 +71,9 @@ export default function CollectionPage() {
 
   const wishlistVisible = useMemo(() => {
     const filtered = (wishlist ?? []).filter((w) => w.quantity > 0 && matchesFilters(w.card, filters));
-    const cmp = cardComparator(sort, (sc) => finishPrice(sc, "nonfoil") ?? 0);
+    const cmp = cardComparator(sort, (sc) => priceOf(sc, "nonfoil") ?? 0);
     return [...filtered].sort((a, b) => cmp(a.card, b.card));
-  }, [wishlist, filters, sort]);
+  }, [wishlist, filters, sort, priceSource, priceVersion]);
 
   const changeWish = async (w: WishlistCard, qty: number) => {
     setWishlist((prev) =>
@@ -78,18 +95,22 @@ export default function CollectionPage() {
     return all;
   }, [cards, view]);
 
-  const scopeStats = useMemo(() => collectionStats(scopeCards), [scopeCards]);
+  const scopeStats = useMemo(
+    () => collectionStats(scopeCards),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [scopeCards, priceSource, priceVersion],
+  );
 
   const visible = useMemo(() => {
     const filtered = scopeCards.filter((c) => matchesFilters(c.card, filters));
     // Precompute stack value so the comparator's price lookup is O(1), not O(n).
     const priceByCard = new Map<ScryCard, number>();
     if (sort.startsWith("value")) {
-      for (const c of filtered) priceByCard.set(c.card, (finishPrice(c.card, c.finish) ?? 0) * c.quantity);
+      for (const c of filtered) priceByCard.set(c.card, (priceOf(c.card, c.finish) ?? 0) * c.quantity);
     }
     const cmp = cardComparator(sort, (sc) => priceByCard.get(sc) ?? 0);
     return [...filtered].sort((a, b) => cmp(a.card, b.card));
-  }, [scopeCards, filters, sort]);
+  }, [scopeCards, filters, sort, priceSource, priceVersion]);
 
   useEffect(() => {
     setLimit(PAGE);
@@ -121,7 +142,8 @@ export default function CollectionPage() {
 
   const totalStats = useMemo(
     () => collectionStats((cards ?? []).filter((c) => c.quantity > 0)),
-    [cards],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [cards, priceSource, priceVersion],
   );
 
   // Full set list (for total card counts on the owned-sets grid).
@@ -162,6 +184,20 @@ export default function CollectionPage() {
         </nav>
 
         <MigrationBanner />
+
+        {unresolvedCount > 0 && (
+          <Link
+            href="/collection/resolve"
+            className="mb-4 flex items-center gap-3 rounded-lg border border-amber-700/50 bg-amber-950/30 px-4 py-3 text-sm transition hover:border-amber-600 hover:bg-amber-950/50"
+          >
+            <span className="text-lg">🔎</span>
+            <span className="flex-1 text-amber-200">
+              <strong>{unresolvedCount}</strong> card{unresolvedCount === 1 ? "" : "s"} from a CSV
+              import couldn’t be matched automatically.
+            </span>
+            <span className="shrink-0 text-xs font-bold text-amber-300">Resolve manually →</span>
+          </Link>
+        )}
 
         {/* Collection / Wishlist toggle */}
         <div className="mb-4 inline-flex gap-0.5 rounded-lg bg-stone-900 p-0.5">
@@ -217,7 +253,7 @@ export default function CollectionPage() {
               <Stat label="Cards" value={(inGrid ? scopeStats : totalStats).totalCards.toLocaleString()} />
               <Stat label="Unique" value={(inGrid ? scopeStats : totalStats).uniqueOracle.toLocaleString()} />
               <Stat
-                label="Value (TCG)"
+                label={`Value (${PRICE_SOURCE_LABEL[priceSource]})`}
                 value={`$${(inGrid ? scopeStats : totalStats).value.toFixed(0)}`}
                 accent
               />
@@ -267,6 +303,7 @@ export default function CollectionPage() {
             >
               📤 Export CSV
             </button>
+            <PriceSourceToggle />
           </div>
         )}
       </div>
@@ -302,7 +339,7 @@ export default function CollectionPage() {
                     key={w.oracleId}
                     card={w.card}
                     owned={w.quantity}
-                    price={finishPrice(w.card, "nonfoil")}
+                    price={priceOf(w.card, "nonfoil")}
                     onOpen={() => setDetailCard(w.card)}
                     onAdjust={(d) => void changeWish(w, w.quantity + d)}
                   />
@@ -387,7 +424,7 @@ export default function CollectionPage() {
                       card={c.card}
                       owned={c.quantity}
                       finishBadge={c.finish === "foil" ? "FOIL" : c.finish === "etched" ? "ETCH" : null}
-                      price={finishPrice(c.card, c.finish)}
+                      price={priceOf(c.card, c.finish)}
                       onOpen={() => setDetailCard(c.card)}
                       onAdjust={(d) => void changeQty(c, c.quantity + d)}
                     />
@@ -409,7 +446,8 @@ export default function CollectionPage() {
         {getCardDbStatus().syncedAt
           ? "Card search uses your synced local database."
           : "Tip: sync the card database on the My decks page for faster offline search."}{" "}
-        Prices are Scryfall (TCGplayer).{" "}
+        Prices are {PRICE_SOURCE_LABEL[priceSource]} (
+        {getPriceSyncStatus().syncedAt ? "MTGJSON" : "Scryfall fallback — sync prices on My decks"}).{" "}
         {getRepo().mode === "supabase" ? "Stored in Supabase." : "Stored in your local database."}
       </p>
 
@@ -436,6 +474,30 @@ export default function CollectionPage() {
       {importOpen && (
         <ImportCsvModal onClose={() => setImportOpen(false)} onImported={() => void refresh()} />
       )}
+    </div>
+  );
+}
+
+/** Segmented control to pick the price provider (persisted in localStorage). */
+function PriceSourceToggle() {
+  const source = usePriceStore((s) => s.source);
+  const setSource = usePriceStore((s) => s.setSource);
+  return (
+    <div
+      className="flex shrink-0 items-center gap-0.5 rounded-md bg-stone-900 p-0.5"
+      title="Which retailer's prices to show (synced from MTGJSON)"
+    >
+      {(["tcgplayer", "cardkingdom"] as PriceSource[]).map((s) => (
+        <button
+          key={s}
+          onClick={() => setSource(s)}
+          className={`rounded px-2.5 py-1.5 text-xs font-semibold transition ${
+            source === s ? "bg-stone-700 text-white" : "text-stone-400 hover:text-stone-200"
+          }`}
+        >
+          {PRICE_SOURCE_LABEL[s]}
+        </button>
+      ))}
     </div>
   );
 }

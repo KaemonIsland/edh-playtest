@@ -11,6 +11,7 @@ import type {
   Repo,
   ShowcaseDeck,
   ShowcaseDeckMeta,
+  UnresolvedImport,
   WishlistCard,
 } from "./types";
 
@@ -493,5 +494,58 @@ export class SupabaseRepo implements Repo {
 
   async removeWishlistEntry(oracleId: string): Promise<void> {
     await this.rest(`wishlist?oracle_id=eq.${encodeURIComponent(oracleId)}`, { method: "DELETE" });
+  }
+
+  async listUnresolvedImports(): Promise<UnresolvedImport[]> {
+    type Row = {
+      id: string;
+      name: string;
+      quantity: number;
+      finish: UnresolvedImport["finish"];
+      set_code: string | null;
+      set_name: string | null;
+      collector_number: string | null;
+      scryfall_id: string | null;
+      created_at: string;
+    };
+    const rows = await this.rest<Row[]>("unresolved_imports?select=*&order=created_at.asc");
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      quantity: r.quantity,
+      finish: r.finish,
+      setCode: r.set_code ?? undefined,
+      setName: r.set_name ?? undefined,
+      collectorNumber: r.collector_number ?? undefined,
+      scryfallId: r.scryfall_id ?? undefined,
+      createdAt: new Date(r.created_at).getTime(),
+    }));
+  }
+
+  async addUnresolvedImports(items: UnresolvedImport[]): Promise<void> {
+    if (items.length === 0) return;
+    await this.rest("unresolved_imports?on_conflict=id", {
+      method: "POST",
+      body: JSON.stringify(
+        items.map((e) => ({
+          id: e.id,
+          name: e.name,
+          quantity: e.quantity,
+          finish: e.finish,
+          set_code: e.setCode ?? null,
+          set_name: e.setName ?? null,
+          collector_number: e.collectorNumber ?? null,
+          scryfall_id: e.scryfallId ?? null,
+        })),
+      ),
+    });
+  }
+
+  async removeUnresolvedImport(id: string): Promise<void> {
+    await this.rest(`unresolved_imports?id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+
+  async clearUnresolvedImports(): Promise<void> {
+    await this.rest("unresolved_imports?id=neq.__none__", { method: "DELETE" });
   }
 }

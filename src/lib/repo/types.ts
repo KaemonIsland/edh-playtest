@@ -116,6 +116,27 @@ export function collectionEntryId(printingId: string, finish: CardFinish): strin
   return `${printingId}:${finish}`;
 }
 
+/**
+ * A CSV import row that couldn't be matched to a Scryfall printing. Kept so the
+ * user can manually locate and resolve it on the Manual Resolution page instead
+ * of silently losing it. Carries the original row's quantity/finish so resolving
+ * adds the right stack.
+ */
+export interface UnresolvedImport {
+  /** Client-generated uuid. */
+  id: string;
+  /** Name as written in the CSV (may be misspelled / not found). */
+  name: string;
+  quantity: number;
+  finish: CardFinish;
+  setCode?: string;
+  setName?: string;
+  collectorNumber?: string;
+  /** The Scryfall id from the CSV that failed to resolve, if any. */
+  scryfallId?: string;
+  createdAt: number;
+}
+
 /** A card the user wants to acquire (oracle-level). */
 export interface WishlistCard {
   oracleId: string;
@@ -172,6 +193,13 @@ export interface Repo {
   removeCollectionEntry(id: string): Promise<void>;
   /** Wipe the whole collection (for "replace on import"). */
   clearCollection(): Promise<void>;
+
+  // Unresolved CSV imports (manual resolution queue)
+  listUnresolvedImports(): Promise<UnresolvedImport[]>;
+  /** Append rows that failed to match (deduped by id). */
+  addUnresolvedImports(items: UnresolvedImport[]): Promise<void>;
+  removeUnresolvedImport(id: string): Promise<void>;
+  clearUnresolvedImports(): Promise<void>;
 
   // Wishlist
   listWishlist(): Promise<WishlistCard[]>;

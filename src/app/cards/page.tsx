@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { ScryCard } from "@/types";
-import { collectionEntryId, finishPrice, getRepo, type CardFinish } from "@/lib/repo";
+import { collectionEntryId, getRepo, type CardFinish } from "@/lib/repo";
+import { loadPriceIndex, priceOf, usePriceStore } from "@/lib/cards/pricing";
 import { adjustCollection } from "@/lib/cards/collection";
 import type { CollectionCard } from "@/lib/repo";
 import { fetchAllSets, fetchSetCards, type SetInfo } from "@/lib/cards/carddb";
@@ -38,6 +39,12 @@ export default function AllCardsPage() {
   const [detailCard, setDetailCard] = useState<ScryCard | null>(null);
   const [searchModal, setSearchModal] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const priceSource = usePriceStore((s) => s.source);
+  const priceVersion = usePriceStore((s) => s.version);
+
+  useEffect(() => {
+    void loadPriceIndex();
+  }, []);
 
   const refreshOwned = useCallback(async () => {
     const list = await getRepo().listCollection();
@@ -132,10 +139,11 @@ export default function AllCardsPage() {
     const filtered = (setCards ?? []).filter((c) => matchesFilters(c, filters));
     const priceByCard = new Map<ScryCard, number>();
     if (sort.startsWith("value"))
-      for (const c of filtered) priceByCard.set(c, finishPrice(c, "nonfoil") ?? 0);
+      for (const c of filtered) priceByCard.set(c, priceOf(c, "nonfoil") ?? 0);
     const cmp = cardComparator(sort, (sc) => priceByCard.get(sc) ?? 0);
     return [...filtered].sort(cmp);
-  }, [setCards, filters, sort]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setCards, filters, sort, priceSource, priceVersion]);
 
   useEffect(() => {
     setLimit(PAGE);
@@ -283,7 +291,7 @@ export default function AllCardsPage() {
                       key={c.id}
                       card={c}
                       owned={ownedQty(c.id, "nonfoil")}
-                      price={finishPrice(c, "nonfoil")}
+                      price={priceOf(c, "nonfoil")}
                       onOpen={() => setDetailCard(c)}
                       onAdjust={(d) => void adjust(c, "nonfoil", d)}
                     />

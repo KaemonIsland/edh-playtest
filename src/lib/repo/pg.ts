@@ -98,6 +98,18 @@ create table if not exists wishlist (
   added_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+create table if not exists unresolved_imports (
+  id text primary key,
+  name text not null,
+  quantity int not null default 1,
+  finish text not null default 'nonfoil',
+  set_code text,
+  set_name text,
+  collector_number text,
+  scryfall_id text,
+  created_at timestamptz not null default now()
+);
 `;
 
 let pool: Pool | null = null;

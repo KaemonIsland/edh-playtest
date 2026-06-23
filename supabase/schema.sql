@@ -102,6 +102,19 @@ create table if not exists wishlist (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists unresolved_imports (
+  id text primary key,
+  owner_id uuid references profiles(id),
+  name text not null,
+  quantity int not null default 1,
+  finish text not null default 'nonfoil',
+  set_code text,
+  set_name text,
+  collector_number text,
+  scryfall_id text,
+  created_at timestamptz not null default now()
+);
+
 -- Row-Level Security (permissive anon policies; see note at top).
 alter table profiles enable row level security;
 alter table decks enable row level security;
@@ -111,6 +124,7 @@ alter table games enable row level security;
 alter table comments enable row level security;
 alter table collection enable row level security;
 alter table wishlist enable row level security;
+alter table unresolved_imports enable row level security;
 
 create policy "anon read decks" on decks for select using (true);
 create policy "anon write decks" on decks for insert with check (true);
@@ -142,3 +156,7 @@ create policy "anon read wishlist" on wishlist for select using (true);
 create policy "anon write wishlist" on wishlist for insert with check (true);
 create policy "anon update wishlist" on wishlist for update using (true);
 create policy "anon delete wishlist" on wishlist for delete using (true);
+
+create policy "anon read unresolved" on unresolved_imports for select using (true);
+create policy "anon write unresolved" on unresolved_imports for insert with check (true);
+create policy "anon delete unresolved" on unresolved_imports for delete using (true);

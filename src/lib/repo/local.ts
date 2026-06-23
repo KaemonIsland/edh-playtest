@@ -11,6 +11,7 @@ import type {
   Repo,
   ShowcaseDeck,
   ShowcaseDeckMeta,
+  UnresolvedImport,
   WishlistCard,
 } from "./types";
 
@@ -169,5 +170,22 @@ export class LocalRepo implements Repo {
 
   async removeWishlistEntry(oracleId: string): Promise<void> {
     await db.wishlist.delete(oracleId);
+  }
+
+  async listUnresolvedImports(): Promise<UnresolvedImport[]> {
+    return db.unresolvedImports.orderBy("createdAt").toArray();
+  }
+
+  async addUnresolvedImports(items: UnresolvedImport[]): Promise<void> {
+    if (items.length === 0) return;
+    await db.unresolvedImports.bulkPut(items);
+  }
+
+  async removeUnresolvedImport(id: string): Promise<void> {
+    await db.unresolvedImports.delete(id);
+  }
+
+  async clearUnresolvedImports(): Promise<void> {
+    await db.unresolvedImports.clear();
   }
 }

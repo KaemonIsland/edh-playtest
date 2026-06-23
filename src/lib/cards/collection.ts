@@ -3,11 +3,11 @@
 import type { ScryCard } from "@/types";
 import {
   collectionEntryId,
-  finishPrice,
   getRepo,
   type CardFinish,
   type CollectionCard,
 } from "@/lib/repo";
+import { priceOf } from "@/lib/cards/pricing";
 import { db } from "@/lib/db";
 import { getCardDbStatus } from "@/lib/cards/carddb";
 
@@ -122,7 +122,7 @@ export function collectionStats(cards: CollectionCard[]): CollectionStats {
   for (const c of cards) {
     totalCards += c.quantity;
     oracleIds.add(c.oracleId);
-    const unit = finishPrice(c.card, c.finish);
+    const unit = priceOf(c.card, c.finish);
     if (unit !== null) value += unit * c.quantity;
   }
   return {

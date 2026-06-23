@@ -1,5 +1,5 @@
 import type { CollectionCard } from "@/lib/repo";
-import { finishPrice } from "@/lib/repo";
+import { priceOf } from "@/lib/cards/pricing";
 
 /** Format an ISO date (YYYY-MM-DD) as MM/DD/YYYY without timezone drift. */
 export function formatDate(iso?: string): string {
@@ -38,7 +38,7 @@ export function groupBySet(cards: CollectionCard[]): OwnedSetGroup[] {
     }
     g.printings.add(c.printingId);
     g.total += c.quantity;
-    const unit = finishPrice(c.card, c.finish);
+    const unit = priceOf(c.card, c.finish);
     if (unit !== null) g.value += unit * c.quantity;
   }
   return [...map.values()]

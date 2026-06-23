@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Link from "next/link";
 import {
   importCollection,
   parseCollectionCsv,
@@ -213,13 +214,48 @@ export function ImportCsvModal({
               ✓ Imported {result.cards.toLocaleString()} cards ({result.added.toLocaleString()}{" "}
               stacks).
             </div>
+
+            {/* Matched-by breakdown — see which identifier did the work. */}
+            <div className="rounded-lg bg-stone-900 p-3">
+              <div className="mb-1.5 text-[10px] font-bold tracking-wide text-stone-500 uppercase">
+                Matched by
+              </div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                {(
+                  [
+                    ["MTGJSON UUID", result.byMethod.uuid],
+                    ["Scryfall ID", result.byMethod.scryfallId],
+                    ["Set + collector", result.byMethod.setCollector],
+                    ["Card name", result.byMethod.name],
+                  ] as const
+                ).map(([label, n]) => (
+                  <div key={label} className="flex items-center justify-between">
+                    <span className="text-stone-400">{label}</span>
+                    <span className={`font-semibold ${n > 0 ? "text-stone-200" : "text-stone-600"}`}>
+                      {n.toLocaleString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             {(result.unresolvedIds > 0 || result.skippedRows > 0) && (
               <p className="text-[11px] text-amber-400">
-                {result.unresolvedIds > 0 && `${result.unresolvedIds} printing(s) not found on Scryfall. `}
+                {result.unresolvedIds > 0 &&
+                  `${result.unresolvedIds} card(s) couldn't be matched — resolve them manually below. `}
                 {result.skippedRows > 0 && `${result.skippedRows} row(s) skipped (no name/ID).`}
               </p>
             )}
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
+              {result.unresolvedIds > 0 && (
+                <Link
+                  href="/collection/resolve"
+                  onClick={onClose}
+                  className="rounded-md border border-amber-700 bg-amber-950/40 px-4 py-1.5 text-xs font-bold text-amber-200 hover:bg-amber-950/70"
+                >
+                  🔎 Resolve {result.unresolvedIds} manually
+                </Link>
+              )}
               <button
                 onClick={onClose}
                 className="rounded-md bg-emerald-700 px-4 py-1.5 text-xs font-bold text-white hover:bg-emerald-600"

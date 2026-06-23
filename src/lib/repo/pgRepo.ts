@@ -11,6 +11,7 @@ import type {
   Repo,
   ShowcaseDeck,
   ShowcaseDeckMeta,
+  UnresolvedImport,
   WishlistCard,
 } from "./types";
 
@@ -423,6 +424,68 @@ export class PgRepo implements Repo {
 
   async removeWishlistEntry(oracleId: string): Promise<void> {
     await query(`delete from wishlist where oracle_id = $1`, [oracleId]);
+  }
+
+  // ----- Unresolved imports -----------------------------------------------
+  async listUnresolvedImports(): Promise<UnresolvedImport[]> {
+    const rows = await query<{
+      id: string;
+      name: string;
+      quantity: number;
+      finish: CardFinish;
+      set_code: string | null;
+      set_name: string | null;
+      collector_number: string | null;
+      scryfall_id: string | null;
+      created_at: string;
+    }>(`select * from unresolved_imports order by created_at asc`);
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      quantity: r.quantity,
+      finish: r.finish,
+      setCode: r.set_code ?? undefined,
+      setName: r.set_name ?? undefined,
+      collectorNumber: r.collector_number ?? undefined,
+      scryfallId: r.scryfall_id ?? undefined,
+      createdAt: new Date(r.created_at).getTime(),
+    }));
+  }
+
+  async addUnresolvedImports(items: UnresolvedImport[]): Promise<void> {
+    if (items.length === 0) return;
+    const CHUNK = 500;
+    for (let i = 0; i < items.length; i += CHUNK) {
+      const slice = items.slice(i, i + CHUNK);
+      const cols = 8;
+      const placeholders = slice
+        .map((_, k) => `(${Array.from({ length: cols }, (_, j) => `$${k * cols + j + 1}`).join(",")})`)
+        .join(",");
+      const params = slice.flatMap((e) => [
+        e.id,
+        e.name,
+        e.quantity,
+        e.finish,
+        e.setCode ?? null,
+        e.setName ?? null,
+        e.collectorNumber ?? null,
+        e.scryfallId ?? null,
+      ]);
+      await query(
+        `insert into unresolved_imports (id, name, quantity, finish, set_code, set_name, collector_number, scryfall_id)
+         values ${placeholders}
+         on conflict (id) do nothing`,
+        params,
+      );
+    }
+  }
+
+  async removeUnresolvedImport(id: string): Promise<void> {
+    await query(`delete from unresolved_imports where id = $1`, [id]);
+  }
+
+  async clearUnresolvedImports(): Promise<void> {
+    await query(`delete from unresolved_imports`);
   }
 }
 

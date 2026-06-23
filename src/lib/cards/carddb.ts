@@ -4,10 +4,11 @@ import type { ScryCard } from "@/types";
 import { db } from "@/lib/db";
 
 /**
- * Local card database: Scryfall's `oracle_cards` bulk file (~35MB, updated
- * daily, published for exactly this purpose) synced into IndexedDB. Card
- * search runs locally once synced; images stay on Scryfall's CDN (and are
- * browser-cached). The API-route search remains as a fallback when unsynced.
+ * Local card database: MTGJSON's AtomicCards (oracle-level) synced into
+ * IndexedDB via the /api/mtgjson/cards route, which also reconstructs Scryfall
+ * image URLs and attaches rulings. Card search runs locally once synced; images
+ * stay on Scryfall's CDN (and are browser-cached). The API-route search remains
+ * as a fallback when unsynced.
  */
 
 const SYNC_META_KEY = "edh-playtest:carddb-sync";
@@ -32,85 +33,23 @@ export interface SyncProgress {
   total: number;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type RawCard = Record<string, any>;
-
-function slim(raw: RawCard): ScryCard {
-  return {
-    id: raw.id,
-    oracle_id: raw.oracle_id ?? raw.id,
-    name: raw.name,
-    mana_cost: raw.mana_cost ?? raw.card_faces?.[0]?.mana_cost,
-    cmc: raw.cmc ?? 0,
-    type_line: raw.type_line ?? raw.card_faces?.[0]?.type_line ?? "",
-    oracle_text: raw.oracle_text,
-    colors: raw.colors,
-    color_identity: raw.color_identity ?? [],
-    produced_mana: raw.produced_mana,
-    power: raw.power,
-    toughness: raw.toughness,
-    loyalty: raw.loyalty,
-    layout: raw.layout ?? "normal",
-    card_faces: raw.card_faces?.map((f: RawCard) => ({
-      name: f.name,
-      mana_cost: f.mana_cost,
-      type_line: f.type_line,
-      oracle_text: f.oracle_text,
-      colors: f.colors,
-      power: f.power,
-      toughness: f.toughness,
-      loyalty: f.loyalty,
-      image_uris: f.image_uris
-        ? { small: f.image_uris.small, normal: f.image_uris.normal, art_crop: f.image_uris.art_crop }
-        : undefined,
-    })),
-    image_uris: raw.image_uris
-      ? {
-          small: raw.image_uris.small,
-          normal: raw.image_uris.normal,
-          art_crop: raw.image_uris.art_crop,
-        }
-      : undefined,
-    legalities: { commander: raw.legalities?.commander },
-    prices: raw.prices ? { usd: raw.prices.usd } : undefined,
-    set: raw.set,
-    set_name: raw.set_name,
-    collector_number: raw.collector_number,
-    released_at: raw.released_at,
-    rarity: raw.rarity,
-    keywords: raw.keywords,
-    all_parts: Array.isArray(raw.all_parts)
-      ? raw.all_parts.map((p: { id: string; component: string; name: string; type_line: string }) => ({
-          id: p.id,
-          component: p.component,
-          name: p.name,
-          type_line: p.type_line,
-        }))
-      : undefined,
-  };
+interface OracleRow {
+  oracle_id: string;
+  nameKey: string;
+  card: ScryCard;
 }
 
-/** Download + store the bulk database. Re-run any time to refresh. */
+/** Download + store the oracle card database from MTGJSON. Re-run to refresh. */
 export async function syncCardDatabase(
   onProgress?: (p: SyncProgress) => void,
 ): Promise<CardDbStatus> {
-  onProgress?.({ phase: "manifest", stored: 0, total: 0 });
-  const manifest = await fetch("https://api.scryfall.com/bulk-data/oracle-cards", {
-    headers: { Accept: "application/json" },
-  });
-  if (!manifest.ok) throw new Error(`Bulk manifest failed (${manifest.status})`);
-  const { download_uri } = (await manifest.json()) as { download_uri: string };
-
   onProgress?.({ phase: "download", stored: 0, total: 0 });
-  const res = await fetch(download_uri);
-  if (!res.ok) throw new Error(`Bulk download failed (${res.status})`);
-  const all = (await res.json()) as RawCard[];
-
-  // Skip pure art/token/meme layouts that aren't deck-buildable.
-  const SKIP_LAYOUTS = new Set(["art_series", "token", "double_faced_token", "emblem", "planar", "scheme", "vanguard"]);
-  const rows = all
-    .filter((c) => !SKIP_LAYOUTS.has(c.layout) && c.oracle_id)
-    .map((c) => ({ oracle_id: c.oracle_id as string, nameKey: (c.name as string).toLowerCase(), card: slim(c) }));
+  const res = await fetch("/api/mtgjson/cards", { method: "POST" });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `Card database sync failed (${res.status})`);
+  }
+  const { rows } = (await res.json()) as { rows: OracleRow[] };
 
   onProgress?.({ phase: "store", stored: 0, total: rows.length });
   await db.oracle.clear();
