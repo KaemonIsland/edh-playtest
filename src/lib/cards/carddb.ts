@@ -262,7 +262,10 @@ export interface SetInfo {
   set_type: string;
 }
 
-const SETS_CACHE_KEY = "edh-playtest:sets";
+// Bump the version suffix whenever SetInfo's shape changes, so a week-long
+// cache from before the change is discarded rather than served stale. v2 adds
+// `icon_svg_uri` (set icons) — pre-v2 caches lack it and show no icons.
+const SETS_CACHE_KEY = "edh-playtest:sets:v2";
 const SETS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Full set list (cached in localStorage for a week). */

@@ -101,7 +101,10 @@ function toCard(r: PrintRow): ScryCard {
     loyalty: r.loyalty ?? undefined,
     layout: r.layout ?? "normal",
     legalities: legalities(r),
-    set: r.set_code ?? undefined,
+    // MTGJSON set codes are UPPERCASE ("VOW"); the app (and Scryfall) use
+    // lowercase ("vow") everywhere — keep that convention so set-list joins
+    // (icons, counts) and set filters line up.
+    set: r.set_code?.toLowerCase() ?? undefined,
     set_name: r.set_name ?? undefined,
     collector_number: r.number ?? undefined,
     released_at: r.release_date ?? undefined,

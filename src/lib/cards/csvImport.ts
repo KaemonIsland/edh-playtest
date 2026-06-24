@@ -467,7 +467,7 @@ export async function importCollection(
         printingId: card.id,
         oracleId: card.oracle_id,
         name: card.name,
-        setCode: card.set ?? row.setCode,
+        setCode: (card.set ?? row.setCode)?.toLowerCase(),
         setName: card.set_name ?? row.setName,
         collectorNumber: card.collector_number ?? row.collectorNumber,
         finish: row.finish,

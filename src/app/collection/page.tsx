@@ -154,9 +154,11 @@ export default function CollectionPage() {
 
   const ownedSetItems: SetGridItem[] = useMemo(() => {
     const owned = groupBySet((cards ?? []).filter((c) => c.quantity > 0));
-    const byCode = new Map((allSets ?? []).map((s) => [s.code, s]));
+    // Key by lowercase: the Scryfall set list is lowercase, but owned cards may
+    // carry uppercase MTGJSON set codes (e.g. older imports) — match either way.
+    const byCode = new Map((allSets ?? []).map((s) => [s.code.toLowerCase(), s]));
     return owned.map((g) => {
-      const info = byCode.get(g.code);
+      const info = byCode.get(g.code.toLowerCase());
       const total = info?.card_count;
       return {
         code: g.code,
