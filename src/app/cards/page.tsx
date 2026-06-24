@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import type { ScryCard } from "@/types";
 import { collectionEntryId, getRepo, type CardFinish } from "@/lib/repo";
 import { loadPriceIndex, priceOf, usePriceStore } from "@/lib/cards/pricing";
@@ -174,14 +173,7 @@ export default function AllCardsPage() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-[#08080a] text-stone-200">
-      <div className="mx-auto w-full max-w-6xl px-4 pt-8">
-        <nav className="mb-4 flex gap-4 text-xs text-stone-400">
-          <Link href="/" className="hover:text-white">Home</Link>
-          <Link href="/collection" className="hover:text-white">Collection</Link>
-          <Link href="/decks" className="hover:text-white">My decks</Link>
-          <span className="font-semibold text-stone-200">All cards</span>
-        </nav>
-
+      <div className="mx-auto w-full max-w-6xl px-4 pt-6">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div className="flex items-center gap-3">
             {active && (

@@ -10,12 +10,9 @@ import {
   usePriceStore,
   PRICE_SOURCE_LABEL,
   getPriceSyncStatus,
-  type PriceSource,
 } from "@/lib/cards/pricing";
 import { collectionStats, enrichCollectionFromOracle, setCollectionQty } from "@/lib/cards/collection";
 import { adjustWishlist } from "@/lib/cards/wishlist";
-import { collectionToCsv } from "@/lib/cards/collectionCsv";
-import { downloadTextFile } from "@/lib/download";
 import type { WishlistCard } from "@/lib/repo";
 import { getCardDbStatus, fetchAllSets, type SetInfo } from "@/lib/cards/carddb";
 import { groupBySet } from "@/lib/cards/sets";
@@ -24,7 +21,6 @@ import { CardGridTile } from "@/components/collection/CardGridTile";
 import { SetGrid, type SetGridItem } from "@/components/collection/SetGrid";
 import { CardSearchModal } from "@/components/builder/CardSearchModal";
 import { CardDetailModal } from "@/components/builder/CardDetailModal";
-import { ImportCsvModal } from "@/components/collection/ImportCsvModal";
 import { MigrationBanner } from "@/components/MigrationBanner";
 import {
   FilterSidebar,
@@ -49,7 +45,6 @@ export default function CollectionPage() {
   const [limit, setLimit] = useState(PAGE);
   const [searchModal, setSearchModal] = useState<string | null>(null);
   const [detailCard, setDetailCard] = useState<ScryCard | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
   const [unresolvedCount, setUnresolvedCount] = useState(0);
   // Re-render / recompute card values when the price source or index changes.
   const priceSource = usePriceStore((s) => s.source);
@@ -95,12 +90,6 @@ export default function CollectionPage() {
     return all;
   }, [cards, view]);
 
-  const scopeStats = useMemo(
-    () => collectionStats(scopeCards),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [scopeCards, priceSource, priceVersion],
-  );
-
   const visible = useMemo(() => {
     const filtered = scopeCards.filter((c) => matchesFilters(c.card, filters));
     // Precompute stack value so the comparator's price lookup is O(1), not O(n).
@@ -111,6 +100,14 @@ export default function CollectionPage() {
     const cmp = cardComparator(sort, (sc) => priceByCard.get(sc) ?? 0);
     return [...filtered].sort((a, b) => cmp(a.card, b.card));
   }, [scopeCards, filters, sort, priceSource, priceVersion]);
+
+  // Header stats follow the current scope *and* filters: clicking into a set or
+  // applying filters narrows the card / value totals to exactly what's shown.
+  const visibleStats = useMemo(
+    () => collectionStats(visible),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [visible, priceSource, priceVersion],
+  );
 
   useEffect(() => {
     setLimit(PAGE);
@@ -177,14 +174,7 @@ export default function CollectionPage() {
   return (
     <div className="flex min-h-dvh flex-col bg-[#08080a] text-stone-200">
       {/* Header */}
-      <div className="mx-auto w-full max-w-6xl px-4 pt-8">
-        <nav className="mb-4 flex gap-4 text-xs text-stone-400">
-          <Link href="/" className="hover:text-white">Home</Link>
-          <Link href="/cards" className="hover:text-white">All cards</Link>
-          <Link href="/decks" className="hover:text-white">My decks</Link>
-          <span className="font-semibold text-stone-200">Collection</span>
-        </nav>
-
+      <div className="mx-auto w-full max-w-6xl px-4 pt-6">
         <MigrationBanner />
 
         {unresolvedCount > 0 && (
@@ -252,12 +242,14 @@ export default function CollectionPage() {
             </div>
             {/* Context-specific metadata */}
             <div className="flex gap-4 text-right">
-              <Stat label="Cards" value={(inGrid ? scopeStats : totalStats).totalCards.toLocaleString()} />
-              <Stat label="Unique" value={(inGrid ? scopeStats : totalStats).uniqueOracle.toLocaleString()} />
+              <Stat label="Cards" value={(inGrid ? visibleStats : totalStats).totalCards.toLocaleString()} />
+              <Stat label="Unique" value={(inGrid ? visibleStats : totalStats).uniqueOracle.toLocaleString()} />
               <Stat
                 label={`Value (${PRICE_SOURCE_LABEL[priceSource]})`}
-                value={`$${(inGrid ? scopeStats : totalStats).value.toFixed(0)}`}
+                value={`$${(inGrid ? visibleStats : totalStats).value.toFixed(0)}`}
                 accent
+                infoHref="/collection/price"
+                infoTitle="Price breakdown & distribution"
               />
             </div>
           </div>
@@ -284,28 +276,6 @@ export default function CollectionPage() {
             >
               🔍 Browse cards
             </button>
-            <button
-              onClick={() => setImportOpen(true)}
-              className="shrink-0 rounded-md border border-stone-700 bg-stone-900 px-4 py-2 text-sm font-semibold text-stone-300 hover:bg-stone-800"
-            >
-              📥 Import CSV
-            </button>
-            <button
-              onClick={() => {
-                const owned = (cards ?? []).filter((c) => c.quantity > 0);
-                if (owned.length === 0) return;
-                downloadTextFile(
-                  `collection-${new Date().toISOString().slice(0, 10)}.csv`,
-                  collectionToCsv(owned),
-                  "text/csv",
-                );
-              }}
-              disabled={(cards?.length ?? 0) === 0}
-              className="shrink-0 rounded-md border border-stone-700 bg-stone-900 px-4 py-2 text-sm font-semibold text-stone-300 hover:bg-stone-800 disabled:opacity-40"
-            >
-              📤 Export CSV
-            </button>
-            <PriceSourceToggle />
           </div>
         )}
       </div>
@@ -447,9 +417,9 @@ export default function CollectionPage() {
       <p className="px-4 pb-6 text-center text-[10px] text-stone-600">
         {getCardDbStatus().syncedAt
           ? "Card search uses your synced local database."
-          : "Tip: sync the card database on the My decks page for faster offline search."}{" "}
+          : "Tip: sync the card database in Settings for faster offline search."}{" "}
         Prices are {PRICE_SOURCE_LABEL[priceSource]} (
-        {getPriceSyncStatus().syncedAt ? "MTGJSON" : "Scryfall fallback — sync prices on My decks"}).{" "}
+        {getPriceSyncStatus().syncedAt ? "MTGJSON" : "Scryfall fallback — sync prices in Settings"}).{" "}
         {getRepo().mode === "supabase" ? "Stored in Supabase." : "Stored in your local database."}
       </p>
 
@@ -473,42 +443,39 @@ export default function CollectionPage() {
           onNavigate={setDetailCard}
         />
       )}
-      {importOpen && (
-        <ImportCsvModal onClose={() => setImportOpen(false)} onImported={() => void refresh()} />
-      )}
     </div>
   );
 }
 
-/** Segmented control to pick the price provider (persisted in localStorage). */
-function PriceSourceToggle() {
-  const source = usePriceStore((s) => s.source);
-  const setSource = usePriceStore((s) => s.setSource);
-  return (
-    <div
-      className="flex shrink-0 items-center gap-0.5 rounded-md bg-stone-900 p-0.5"
-      title="Which retailer's prices to show (synced from MTGJSON)"
-    >
-      {(["tcgplayer", "cardkingdom"] as PriceSource[]).map((s) => (
-        <button
-          key={s}
-          onClick={() => setSource(s)}
-          className={`rounded px-2.5 py-1.5 text-xs font-semibold transition ${
-            source === s ? "bg-stone-700 text-white" : "text-stone-400 hover:text-stone-200"
-          }`}
-        >
-          {PRICE_SOURCE_LABEL[s]}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+function Stat({
+  label,
+  value,
+  accent,
+  infoHref,
+  infoTitle,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+  infoHref?: string;
+  infoTitle?: string;
+}) {
   return (
     <div>
       <div className={`text-lg font-bold ${accent ? "text-emerald-300" : "text-stone-100"}`}>{value}</div>
-      <div className="text-[10px] tracking-wide text-stone-500 uppercase">{label}</div>
+      <div className="flex items-center justify-end gap-1 text-[10px] tracking-wide text-stone-500 uppercase">
+        {label}
+        {infoHref && (
+          <Link
+            href={infoHref}
+            title={infoTitle}
+            aria-label={infoTitle ?? "More info"}
+            className="flex h-3.5 w-3.5 items-center justify-center rounded-full border border-stone-600 text-[8px] font-bold text-stone-400 normal-case hover:border-emerald-500 hover:text-emerald-400"
+          >
+            i
+          </Link>
+        )}
+      </div>
     </div>
   );
 }

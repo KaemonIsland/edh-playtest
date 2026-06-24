@@ -65,13 +65,10 @@ export default function ResolveImportsPage() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-[#08080a] text-stone-200">
-      <div className="mx-auto w-full max-w-3xl px-4 pt-8 pb-16">
-        <nav className="mb-4 flex gap-4 text-xs text-stone-400">
-          <Link href="/" className="hover:text-white">Home</Link>
-          <Link href="/cards" className="hover:text-white">All cards</Link>
-          <Link href="/decks" className="hover:text-white">My decks</Link>
-          <Link href="/collection" className="hover:text-white">Collection</Link>
-          <span className="font-semibold text-stone-200">Resolve imports</span>
+      <div className="mx-auto w-full max-w-3xl px-4 pt-6 pb-16">
+        <nav className="mb-4 text-xs text-stone-400">
+          <Link href="/collection" className="hover:text-white">← Collection</Link>
+          <span className="ml-2 font-semibold text-stone-200">Resolve imports</span>
         </nav>
 
         <div className="mb-5 flex flex-wrap items-end justify-between gap-3">

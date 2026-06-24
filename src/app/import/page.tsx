@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Deck, ParsedDeckLine, ScryCard } from "@/types";
 import { parseDecklist } from "@/lib/deck/parse";
@@ -302,36 +301,14 @@ export default function ImportPage() {
 
   return (
     <div className="min-h-dvh bg-[#08080a] text-stone-200">
-      <div className="mx-auto max-w-3xl px-4 py-10">
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">
-              Glitched Goblet <span className="text-emerald-500">Playtester</span>
-            </h1>
-            <p className="mt-1 text-sm text-stone-500">
-              Paste a Commander decklist, resolve it, and goldfish it on a real-feeling table.
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Link
-              href="/"
-              className="rounded-md border border-stone-700 bg-stone-900 px-3 py-1.5 text-xs font-semibold text-stone-300 hover:bg-stone-800"
-            >
-              ← Home
-            </Link>
-            <Link
-              href="/collection"
-              className="rounded-md border border-stone-700 bg-stone-900 px-3 py-1.5 text-xs font-semibold text-stone-300 hover:bg-stone-800"
-            >
-              📚 Collection
-            </Link>
-            <Link
-              href="/decks"
-              className="rounded-md border border-stone-700 bg-stone-900 px-3 py-1.5 text-xs font-semibold text-stone-300 hover:bg-stone-800"
-            >
-              🗂 My decks
-            </Link>
-          </div>
+      <div className="mx-auto max-w-3xl px-4 py-8">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">
+            Glitched Goblet <span className="text-emerald-500">Playtester</span>
+          </h1>
+          <p className="mt-1 text-sm text-stone-500">
+            Paste a Commander decklist, resolve it, and goldfish it on a real-feeling table.
+          </p>
         </div>
 
         {stage === "input" && (

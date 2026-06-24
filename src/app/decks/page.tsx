@@ -4,23 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { getRepo, type ShowcaseDeckMeta } from "@/lib/repo";
 import { MigrationBanner } from "@/components/MigrationBanner";
-import {
-  getCardDbStatus,
-  syncCardDatabase,
-  type CardDbStatus,
-  type SyncProgress,
-} from "@/lib/cards/carddb";
-import { getPriceSyncStatus, syncPrices, type PriceSyncStatus } from "@/lib/cards/pricing";
 
 type DeckMetaWithTags = ShowcaseDeckMeta & { tags?: string[] };
 
 export default function DecksPage() {
   const [decks, setDecks] = useState<DeckMetaWithTags[] | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
-  const [dbStatus, setDbStatus] = useState<CardDbStatus>({ syncedAt: null, count: 0 });
-  const [syncing, setSyncing] = useState<SyncProgress | null>(null);
-  const [priceStatus, setPriceStatus] = useState<PriceSyncStatus>({ syncedAt: null, count: 0 });
-  const [pricesSyncing, setPricesSyncing] = useState(false);
 
   const refresh = useCallback(async () => {
     const repo = getRepo();
@@ -37,21 +26,7 @@ export default function DecksPage() {
 
   useEffect(() => {
     void refresh();
-    setDbStatus(getCardDbStatus());
-    setPriceStatus(getPriceSyncStatus());
   }, [refresh]);
-
-  const runPriceSync = async () => {
-    setPricesSyncing(true);
-    try {
-      await syncPrices();
-      setPriceStatus(getPriceSyncStatus());
-    } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Price sync failed.");
-    } finally {
-      setPricesSyncing(false);
-    }
-  };
 
   const allTags = useMemo(() => {
     const tags = new Set<string>();
@@ -64,17 +39,6 @@ export default function DecksPage() {
     [decks, tagFilter],
   );
 
-  const runSync = async () => {
-    try {
-      const status = await syncCardDatabase(setSyncing);
-      setDbStatus(status);
-    } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Card database sync failed.");
-    } finally {
-      setSyncing(null);
-    }
-  };
-
   return (
     <div className="min-h-dvh bg-[#08080a] text-stone-200">
       <div className="mx-auto max-w-5xl px-4 py-10">
@@ -86,26 +50,12 @@ export default function DecksPage() {
               Saved showcases — primers, stats, changelogs, and game history.
             </p>
           </div>
-          <div className="flex gap-2">
-            <Link
-              href="/cards"
-              className="rounded-md border border-stone-700 bg-stone-900 px-4 py-2 text-sm font-semibold text-stone-300 hover:bg-stone-800"
-            >
-              🃏 All cards
-            </Link>
-            <Link
-              href="/collection"
-              className="rounded-md border border-stone-700 bg-stone-900 px-4 py-2 text-sm font-semibold text-stone-300 hover:bg-stone-800"
-            >
-              📚 Collection
-            </Link>
-            <Link
-              href="/import"
-              className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-600"
-            >
-              + Import a deck
-            </Link>
-          </div>
+          <Link
+            href="/import"
+            className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-600"
+          >
+            + Import a deck
+          </Link>
         </div>
 
         {/* Tag filter */}
@@ -202,65 +152,13 @@ export default function DecksPage() {
           </div>
         )}
 
-        {/* Local card database */}
-        <div className="mt-10 rounded-xl border border-stone-800 bg-stone-950 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-bold text-stone-200">Local card database</h2>
-              <p className="mt-0.5 text-xs text-stone-500">
-                {dbStatus.syncedAt
-                  ? `${dbStatus.count.toLocaleString()} cards · synced ${new Date(dbStatus.syncedAt).toLocaleDateString()} — offline search with rarity, sets, and rulings.`
-                  : "Not synced — card search falls back to the Scryfall API. Builds from your local MTGJSON tables (run `npm run sync:mtgjson` first) for offline search with printing rarity, sets, and rulings."}
-              </p>
-            </div>
-            <button
-              onClick={() => void runSync()}
-              disabled={!!syncing}
-              className="rounded-md bg-sky-700 px-4 py-2 text-xs font-bold text-white hover:bg-sky-600 disabled:opacity-50"
-            >
-              {syncing
-                ? syncing.phase === "store"
-                  ? `Storing ${syncing.stored.toLocaleString()}/${syncing.total.toLocaleString()}…`
-                  : syncing.phase === "download"
-                    ? "Downloading…"
-                    : "Preparing…"
-                : dbStatus.syncedAt
-                  ? "Re-sync"
-                  : "Sync card database"}
-            </button>
-          </div>
-        </div>
-
-        {/* Card prices (MTGJSON) */}
-        <div className="mt-4 rounded-xl border border-stone-800 bg-stone-950 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-bold text-stone-200">Card prices (MTGJSON)</h2>
-              <p className="mt-0.5 text-xs text-stone-500">
-                {priceStatus.syncedAt
-                  ? `${priceStatus.count.toLocaleString()} priced printings · synced ${new Date(priceStatus.syncedAt).toLocaleDateString()}. Toggle TCGplayer/Card Kingdom on the Collection page.`
-                  : "Not synced — values fall back to Scryfall's TCGplayer prices. Sync once (~37MB from MTGJSON) for TCGplayer + Card Kingdom prices you can toggle between."}
-              </p>
-            </div>
-            <button
-              onClick={() => void runPriceSync()}
-              disabled={pricesSyncing}
-              className="rounded-md bg-amber-700 px-4 py-2 text-xs font-bold text-white hover:bg-amber-600 disabled:opacity-50"
-            >
-              {pricesSyncing
-                ? "Syncing prices…"
-                : priceStatus.syncedAt
-                  ? "Re-sync prices"
-                  : "Sync prices"}
-            </button>
-          </div>
-        </div>
-
-        <p className="mt-6 text-center text-[10px] text-stone-600">
+        <p className="mt-10 text-center text-[10px] text-stone-600">
           {getRepo().mode === "supabase"
             ? "Stored in Supabase."
             : "Stored in your local Postgres database. Add Supabase keys for a hosted/shared backend."}{" "}
-          Card data and images provided by Scryfall.
+          Sync the card database &amp; prices in{" "}
+          <Link href="/settings" className="text-stone-400 hover:text-stone-200">Settings</Link>. Card data and
+          images provided by Scryfall.
         </p>
       </div>
     </div>

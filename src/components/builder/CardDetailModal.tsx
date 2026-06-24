@@ -7,7 +7,6 @@ import { isBoardCategory } from "@/types";
 import {
   collectionEntryId,
   FINISH_LABEL,
-  finishPrice,
   getRepo,
   type CardFinish,
   type CollectionCard,
@@ -15,13 +14,19 @@ import {
 import { adjustCollection } from "@/lib/cards/collection";
 import { adjustWishlist } from "@/lib/cards/wishlist";
 import { fetchPrintings } from "@/lib/cards/carddb";
+import { loadPriceIndex, priceOf, usePriceStore, PRICE_SOURCE_LABEL } from "@/lib/cards/pricing";
 import { typeGroup } from "@/lib/deck/stats";
 import { CardImage } from "@/components/cards/CardImage";
 import { ManaCost } from "@/components/cards/ManaCost";
 
 type Tab = "options" | "indecks" | "collection" | "info" | "rulings";
 
-const FINISHES: CardFinish[] = ["nonfoil", "foil", "etched"];
+// Etched/other variants surface as their own printing (in "All printings"),
+// so the per-printing stepper only offers the common nonfoil/foil finishes.
+const FINISHES: CardFinish[] = ["nonfoil", "foil"];
+
+/** Printings per page in the "All printings" grid. */
+const PRINTINGS_PER_PAGE = 6;
 
 const QUICK_CATEGORIES = ["Draw", "Interaction", "Ramp", "Maybeboard"];
 
@@ -83,6 +88,23 @@ export function CardDetailModal({
   const [addTarget, setAddTarget] = useState("");
   const [addBoard, setAddBoard] = useState<"Maybeboard" | "Ideas">("Maybeboard");
   const [addNote, setAddNote] = useState<string | null>(null);
+  const [printPage, setPrintPage] = useState(0);
+
+  // Prices come from the synced MTGJSON index (keyed by Scryfall id), not the
+  // card's embedded Scryfall price — MTGJSON-sourced cards carry no `prices`.
+  const priceSource = usePriceStore((s) => s.source);
+  const priceVersion = usePriceStore((s) => s.version);
+  useEffect(() => {
+    void loadPriceIndex();
+  }, []);
+  const fmtPrice = useCallback(
+    (c: ScryCard, finish: CardFinish = "nonfoil"): string => {
+      const v = priceOf(c, finish);
+      return v !== null ? `$${v.toFixed(2)}` : "—";
+    },
+    // Recompute when the index loads or the source switches.
+    [priceSource, priceVersion],
+  );
 
   const TABS: { key: Tab; label: string }[] = [
     ...(hasDeck ? [{ key: "options" as Tab, label: "Card options" }] : []),
@@ -155,6 +177,7 @@ export function CardDetailModal({
     setAddNote(null);
     setAllPrintingsOpen(false);
     setPrintFilter("");
+    setPrintPage(0);
   }, [card.oracle_id]);
 
   // Lazy-load printings for the dropdown.
@@ -297,6 +320,15 @@ export function CardDetailModal({
     shown.card_faces?.map((f) => `${f.name}\n${f.oracle_text ?? ""}`).join("\n—\n") ??
     "";
 
+  // Paginated "All printings" grid (clamped in case the page is stale).
+  const printTotal = printings?.length ?? 0;
+  const printPageCount = Math.max(1, Math.ceil(printTotal / PRINTINGS_PER_PAGE));
+  const printPageSafe = Math.min(printPage, printPageCount - 1);
+  const printPageItems = (printings ?? []).slice(
+    printPageSafe * PRINTINGS_PER_PAGE,
+    (printPageSafe + 1) * PRINTINGS_PER_PAGE,
+  );
+
   return (
     <div
       className="fixed inset-0 z-[90] flex items-start justify-center overflow-y-auto bg-black/75 p-4 backdrop-blur-sm"
@@ -337,8 +369,8 @@ export function CardDetailModal({
             <CardImage card={shown} className="aspect-[5/7] w-full" />
             <div className="mt-1.5 flex items-center justify-between text-[11px]">
               <span className="text-stone-500">{shown.set_name ?? ""}</span>
-              <span className="font-semibold text-emerald-400">
-                {shown.prices?.usd ? `TCG $${shown.prices.usd}` : "—"}
+              <span className="font-semibold text-emerald-400" title={PRICE_SOURCE_LABEL[priceSource]}>
+                {fmtPrice(shown, "nonfoil")}
               </span>
             </div>
           </div>
@@ -405,7 +437,7 @@ export function CardDetailModal({
                       {(printings ?? [shown]).map((p) => (
                         <option key={p.id} value={p.id}>
                           {printingLabel(p)}
-                          {p.prices?.usd ? ` — $${p.prices.usd}` : ""}
+                          {priceOf(p, "nonfoil") !== null ? ` — ${fmtPrice(p, "nonfoil")}` : ""}
                         </option>
                       ))}
                       {printings === null && <option>Loading printings…</option>}
@@ -650,14 +682,13 @@ export function CardDetailModal({
                   <div className="flex flex-col gap-1.5">
                     {FINISHES.map((finish) => {
                       const q = ownedQty(shown.id, finish);
-                      const price = finishPrice(shown, finish);
                       return (
                         <div key={finish} className="flex items-center gap-2">
                           <span className="w-16 text-xs font-semibold text-stone-300">
                             {FINISH_LABEL[finish]}
                           </span>
                           <span className="w-16 text-[11px] text-emerald-400">
-                            {price !== null ? `$${price.toFixed(2)}` : "—"}
+                            {fmtPrice(shown, finish)}
                           </span>
                           <button
                             onClick={() => void adjustOwned(finish, -1)}
@@ -741,7 +772,9 @@ export function CardDetailModal({
                       : (shown.legalities["commander"]?.replace("_", " ") ?? "unknown")}
                   </span>
                   <span className="col-span-2 text-emerald-400">
-                    {shown.prices?.usd ? `TCGplayer market: $${shown.prices.usd}` : "No price data"}
+                    {priceOf(shown, "nonfoil") !== null
+                      ? `${PRICE_SOURCE_LABEL[priceSource]} market: ${fmtPrice(shown, "nonfoil")}`
+                      : "No price data"}
                   </span>
                 </div>
               </div>
@@ -768,24 +801,47 @@ export function CardDetailModal({
           </div>
         </div>
 
-        {/* All printings — full width below everything (collection tab) */}
+        {/* All printings — paginated grid, full width below everything (collection tab) */}
         {tab === "collection" && (
           <div className="border-t border-stone-800 px-5 pb-5 pt-3">
-            <div className="mb-1.5 text-[10px] font-bold tracking-wide text-stone-500 uppercase">
-              All printings {printings ? `(${printings.length})` : ""}
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="text-[10px] font-bold tracking-wide text-stone-500 uppercase">
+                All printings {printings ? `(${printTotal})` : ""}
+              </div>
+              {printPageCount > 1 && (
+                <div className="flex items-center gap-1.5 text-[11px] text-stone-400">
+                  <button
+                    onClick={() => setPrintPage(printPageSafe - 1)}
+                    disabled={printPageSafe === 0}
+                    className="rounded border border-stone-700 bg-stone-900 px-2 py-0.5 font-bold hover:bg-stone-800 disabled:opacity-30"
+                  >
+                    ‹
+                  </button>
+                  <span className="tabular-nums">
+                    {printPageSafe + 1} / {printPageCount}
+                  </span>
+                  <button
+                    onClick={() => setPrintPage(printPageSafe + 1)}
+                    disabled={printPageSafe >= printPageCount - 1}
+                    className="rounded border border-stone-700 bg-stone-900 px-2 py-0.5 font-bold hover:bg-stone-800 disabled:opacity-30"
+                  >
+                    ›
+                  </button>
+                </div>
+              )}
             </div>
             {printings === null ? (
               <p className="text-xs text-stone-600">Loading printings…</p>
             ) : (
-              <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-2">
-                {printings.map((p) => {
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {printPageItems.map((p) => {
                   const nf = ownedQty(p.id, "nonfoil");
                   const fl = ownedQty(p.id, "foil");
                   const owned = nf + fl;
                   return (
                     <div
                       key={p.id}
-                      className={`flex w-32 shrink-0 flex-col gap-1 rounded-md border bg-stone-900 p-1.5 ${
+                      className={`flex flex-col gap-1.5 rounded-md border bg-stone-900 p-2 ${
                         p.id === shown.id
                           ? "border-emerald-600"
                           : owned > 0
@@ -810,23 +866,24 @@ export function CardDetailModal({
                           </span>
                         )}
                       </button>
-                      <div className="truncate text-[9px] text-stone-400" title={p.set_name}>
+                      <div className="truncate text-[11px] text-stone-300" title={p.set_name}>
                         {p.set_name ?? p.set?.toUpperCase()}
                       </div>
-                      <div className="text-[9px] text-stone-500">
-                        ${p.prices?.usd ?? "—"}
-                        {p.prices?.usd_foil ? ` · F $${p.prices.usd_foil}` : ""}
+                      <div className="text-[10px] text-stone-500">
+                        NF {fmtPrice(p, "nonfoil")} · F {fmtPrice(p, "foil")}
                       </div>
-                      <PrintingQty
-                        label="NF"
-                        qty={nf}
-                        onAdjust={(d) => void adjustOwnedFor(p, "nonfoil", d)}
-                      />
-                      <PrintingQty
-                        label="F"
-                        qty={fl}
-                        onAdjust={(d) => void adjustOwnedFor(p, "foil", d)}
-                      />
+                      <div className="flex items-center justify-between gap-1">
+                        <PrintingQty
+                          label="NF"
+                          qty={nf}
+                          onAdjust={(d) => void adjustOwnedFor(p, "nonfoil", d)}
+                        />
+                        <PrintingQty
+                          label="F"
+                          qty={fl}
+                          onAdjust={(d) => void adjustOwnedFor(p, "foil", d)}
+                        />
+                      </div>
                     </div>
                   );
                 })}
@@ -913,7 +970,7 @@ export function CardDetailModal({
                     <div className="mt-1 flex items-center justify-between text-[10px]">
                       <span className="min-w-0 truncate text-stone-400">{printingLabel(p)}</span>
                       <span className="shrink-0 font-semibold text-emerald-400">
-                        {p.prices?.usd ? `$${p.prices.usd}` : "—"}
+                        {fmtPrice(p, "nonfoil")}
                       </span>
                     </div>
                   </button>
