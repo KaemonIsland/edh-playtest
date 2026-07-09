@@ -4,6 +4,7 @@ import type { ScryCard } from "@/types";
 import { isLand } from "@/types";
 import type { CardSort } from "@/lib/cards/sort";
 import type { NumOp } from "@/lib/cards/carddb";
+import { priceOf } from "@/lib/cards/pricing";
 
 const COLORS = ["W", "U", "B", "R", "G", "C"] as const;
 const RARITIES = ["common", "uncommon", "rare", "mythic"] as const;
@@ -137,8 +138,9 @@ export function matchesFilters(card: ScryCard, f: CardFilters): boolean {
   if (f.rarities.length && !f.rarities.includes((card.rarity ?? "").toLowerCase())) return false;
   if (f.commanderOnly && !canBeCommander(card)) return false;
   if (f.priceMin.trim() || f.priceMax.trim()) {
-    // Filter on the card's nonfoil USD price; unknown prices fail any bound.
-    const price = num(card.prices?.usd ?? undefined);
+    // Filter on the card's nonfoil price from the synced index (MTGJSON-sourced
+    // cards carry no embedded Scryfall price); unknown prices fail any bound.
+    const price = priceOf(card, "nonfoil");
     const min = parseFloat(f.priceMin);
     const max = parseFloat(f.priceMax);
     if (Number.isFinite(min) && (price === null || price < min)) return false;

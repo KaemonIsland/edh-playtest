@@ -50,6 +50,9 @@ interface UiStore {
   bottomingSelected: string[];
   /** Set while a dnd-kit drag is active so long-press menus stay closed. */
   dragging: boolean;
+  /** True while the pointer is over a battlefield card — fades the hand so a
+   * card sitting under the fan can be read. */
+  boardHover: boolean;
   /** When the last drag ended — used to swallow the click that follows a drop. */
   lastDragEndAt: number;
   attachSource: string | null;
@@ -74,6 +77,7 @@ interface UiStore {
   toggleBottomingCard: (instanceId: string) => void;
   clearBottoming: () => void;
   setDragging: (dragging: boolean) => void;
+  setBoardHover: (boardHover: boolean) => void;
   setAttachSource: (instanceId: string | null) => void;
   setSelected: (ids: string[]) => void;
   clearSelected: () => void;
@@ -90,6 +94,7 @@ export const useUiStore = create<UiStore>((set, get) => ({
   bottoming: 0,
   bottomingSelected: [],
   dragging: false,
+  boardHover: false,
   lastDragEndAt: 0,
   attachSource: null,
   selected: [],
@@ -119,6 +124,7 @@ export const useUiStore = create<UiStore>((set, get) => ({
       dragging,
       ...(dragging ? { menu: null, preview: null } : { lastDragEndAt: Date.now() }),
     }),
+  setBoardHover: (boardHover) => set({ boardHover }),
   setAttachSource: (instanceId) => set({ attachSource: instanceId }),
   setSelected: (ids) => set({ selected: ids }),
   clearSelected: () => set({ selected: [] }),

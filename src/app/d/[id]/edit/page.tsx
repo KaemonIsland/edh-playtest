@@ -1,6 +1,15 @@
 "use client";
 
-import { use, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  use,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -19,6 +28,8 @@ import { getRepo, type VersionChange } from "@/lib/repo";
 import { groupEntries, typeGroup } from "@/lib/deck/stats";
 import { searchCards, getCardDbStatus } from "@/lib/cards/carddb";
 import { ownedOracleIds } from "@/lib/cards/collection";
+import { saveBotDecks, saveCurrentDeck } from "@/lib/deck/storage";
+import { useGameStore } from "@/lib/game/store";
 import { CardImage } from "@/components/cards/CardImage";
 import { ManaCost } from "@/components/cards/ManaCost";
 import { CardSearchModal } from "@/components/builder/CardSearchModal";
@@ -75,7 +86,12 @@ function TextRow({ entry, owned, onOpen }: { entry: DeckEntry; owned: boolean; o
   );
 }
 
-/** Archidekt-style stack: overlapping card images, hover lifts a card. */
+/**
+ * Archidekt-style stack: card images overlap via a negative top margin so only
+ * a sliver of each shows. Hovering a card parts the stack — the next card slides
+ * down (`[&:hover+*]:mt-0`), fully revealing the hovered one without covering its
+ * neighbours. The first card never overlaps (`first:mt-0`).
+ */
 function StackCard({ entry, owned, onOpen }: { entry: DeckEntry; owned: boolean; onOpen: () => void }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: entry.card.id });
   return (
@@ -84,7 +100,7 @@ function StackCard({ entry, owned, onOpen }: { entry: DeckEntry; owned: boolean;
       {...listeners}
       {...attributes}
       onClick={onOpen}
-      className="relative h-10 cursor-grab overflow-visible transition-[z-index] hover:z-30"
+      className="relative -mt-[120%] cursor-grab transition-[margin] duration-150 first:mt-0 hover:z-30 [&:hover+*]:mt-0"
       style={{ opacity: isDragging ? 0.3 : 1 }}
       title={owned ? entry.card.name : `${entry.card.name} — not in your collection`}
     >
@@ -123,6 +139,7 @@ function CategoryColumn({
   viewMode,
   accent,
   ownedIds,
+  dragging,
   onOpen,
   onToggleSetting,
 }: {
@@ -133,6 +150,8 @@ function CategoryColumn({
   viewMode: ViewMode;
   accent?: "commander";
   ownedIds: Set<string>;
+  /** A drag is in progress — show the column as a labelled drop target. */
+  dragging?: boolean;
   onOpen: (card: ScryCard) => void;
   onToggleSetting?: (key: keyof CategorySetting) => void;
 }) {
@@ -145,7 +164,7 @@ function CategoryColumn({
   return (
     <div
       ref={setNodeRef}
-      className={`flex flex-col rounded-lg border p-2 transition-colors ${
+      className={`relative flex flex-col rounded-lg border p-2 transition-colors ${
         isOver
           ? "border-emerald-600/70 bg-emerald-950/20"
           : accent === "commander"
@@ -155,6 +174,18 @@ function CategoryColumn({
               : "border-stone-800 bg-stone-950/50 opacity-80"
       }`}
     >
+      {/* Archidekt-style drop target: grey veil + category name while dragging. */}
+      {dragging && (
+        <div
+          className={`pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-lg px-2 text-center text-sm font-bold tracking-wide uppercase transition ${
+            isOver
+              ? "bg-emerald-600/35 text-emerald-50 ring-2 ring-emerald-500"
+              : "bg-stone-950/55 text-stone-300 ring-1 ring-stone-700"
+          }`}
+        >
+          {name}
+        </div>
+      )}
       <div className="relative mb-1.5 flex items-center justify-between px-1">
         <span
           className={`truncate text-xs font-bold ${accent === "commander" ? "text-amber-400" : "text-emerald-500"}`}
@@ -213,7 +244,7 @@ function CategoryColumn({
           {entries.length === 0 && <DropHint />}
         </div>
       ) : (
-        <div className="flex min-h-8 flex-col pb-[120%]">
+        <div className="flex min-h-8 flex-col">
           {entries.map((e) => (
             <StackCard
               key={e.card.id}
@@ -245,6 +276,22 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
   const [dragName, setDragName] = useState<string | null>(null);
   const [ownedIds, setOwnedIds] = useState<Set<string>>(new Set());
   const searchTimer = useRef<number | null>(null);
+
+  // Masonry column count, derived from the deck area's width (≈240px/column).
+  const [deckCols, setDeckCols] = useState(4);
+  const colObserver = useRef<ResizeObserver | null>(null);
+  const measureDeckCols = useCallback((el: HTMLElement | null) => {
+    colObserver.current?.disconnect();
+    colObserver.current = null;
+    if (!el) return;
+    const GAP = 12; // gap-3
+    const MIN_COL = 240;
+    const apply = () =>
+      setDeckCols(Math.max(1, Math.floor((el.clientWidth + GAP) / (MIN_COL + GAP))));
+    apply();
+    colObserver.current = new ResizeObserver(apply);
+    colObserver.current.observe(el);
+  }, []);
 
   useEffect(() => {
     void ownedOracleIds().then(setOwnedIds);
@@ -379,6 +426,16 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
     });
   };
 
+  /** Load the current draft straight into the playtester (solo, unsaved-OK). */
+  const playtest = () => {
+    if (!draft) return;
+    saveCurrentDeck(draft);
+    saveBotDecks([]);
+    useGameStore.getState().loadDeck(draft);
+    useGameStore.getState().loadBotDecks([]);
+    router.push("/play");
+  };
+
   const save = async (withChangelog: boolean) => {
     if (!draft || !original) return;
     setSaving(true);
@@ -414,6 +471,62 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
     (b) => !groups.some((g) => g.group === b) && dragName !== null,
   );
   const showCommanderColumn = commanderEntries.length > 0 || dragName !== null;
+
+  // Masonry packing: build the in-deck categories (Commander first), then greedily
+  // place each into the shortest column. Columns are equal-width and flex-fill, so
+  // short categories stack under taller ones instead of leaving the big vertical
+  // gaps a plain grid creates (every grid row is as tall as its tallest cell).
+  const deckItems: { key: string; weight: number; node: ReactNode }[] = [];
+  if (showCommanderColumn) {
+    deckItems.push({
+      key: "__commander",
+      weight: 2 + commanderEntries.length,
+      node: (
+        <CategoryColumn
+          name="Commander"
+          dropId={COMMANDER_DROP}
+          entries={commanderEntries}
+          setting={undefined}
+          viewMode={viewMode}
+          ownedIds={ownedIds}
+          dragging={dragName !== null}
+          accent="commander"
+          onOpen={setDetailCard}
+        />
+      ),
+    });
+  }
+  for (const { group, entries } of inDeckGroups) {
+    deckItems.push({
+      key: group,
+      weight: 2 + entries.length,
+      node: (
+        <CategoryColumn
+          name={group}
+          dropId={`cat:${group}`}
+          entries={entries}
+          setting={draft.categorySettings?.[group]}
+          viewMode={viewMode}
+          ownedIds={ownedIds}
+          dragging={dragName !== null}
+          onOpen={setDetailCard}
+          onToggleSetting={(key) => toggleSetting(group, key)}
+        />
+      ),
+    });
+  }
+  const colCount = Math.max(1, Math.min(deckCols, deckItems.length || 1));
+  const deckBuckets: { key: string; node: ReactNode }[][] = Array.from(
+    { length: colCount },
+    () => [],
+  );
+  const colHeights = new Array(colCount).fill(0);
+  for (const item of deckItems) {
+    let shortest = 0;
+    for (let i = 1; i < colCount; i++) if (colHeights[i] < colHeights[shortest]) shortest = i;
+    deckBuckets[shortest]!.push({ key: item.key, node: item.node });
+    colHeights[shortest] += item.weight;
+  }
 
   return (
     <DndContext
@@ -520,6 +633,13 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
           <div className="ml-auto flex items-center gap-2">
             {dirty && <span className="text-[10px] font-bold text-amber-400">● unsaved</span>}
             <button
+              onClick={playtest}
+              className="rounded-md border border-sky-800/60 bg-sky-950/40 px-3 py-1.5 text-xs font-bold text-sky-200 hover:bg-sky-900/50"
+              title="Playtest the current deck (includes unsaved changes)"
+            >
+              ▶ Playtest
+            </button>
+            <button
               onClick={() => {
                 setDraft(structuredClone(original));
                 setDetailCard(null);
@@ -545,33 +665,15 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
         {/* Deck columns on the left (wrap H+V); excluded boards on a right rail. */}
         <div className="flex min-h-0 flex-1">
           <main
-            className="grid flex-1 content-start items-start gap-3 overflow-y-auto p-3"
-            style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}
+            ref={measureDeckCols}
+            className="flex flex-1 items-start gap-3 overflow-y-auto p-3"
           >
-            {showCommanderColumn && (
-              <CategoryColumn
-                name="Commander"
-                dropId={COMMANDER_DROP}
-                entries={commanderEntries}
-                setting={undefined}
-                viewMode={viewMode}
-                ownedIds={ownedIds}
-                accent="commander"
-                onOpen={setDetailCard}
-              />
-            )}
-            {inDeckGroups.map(({ group, entries }) => (
-              <CategoryColumn
-                key={group}
-                name={group}
-                dropId={`cat:${group}`}
-                entries={entries}
-                setting={draft.categorySettings?.[group]}
-                viewMode={viewMode}
-                ownedIds={ownedIds}
-                onOpen={setDetailCard}
-                onToggleSetting={(key) => toggleSetting(group, key)}
-              />
+            {deckBuckets.map((bucket, i) => (
+              <div key={i} className="flex min-w-0 max-w-[280px] flex-1 flex-col gap-3">
+                {bucket.map((item) => (
+                  <Fragment key={item.key}>{item.node}</Fragment>
+                ))}
+              </div>
             ))}
           </main>
 
@@ -590,6 +692,7 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
                   setting={draft.categorySettings?.[group]}
                   viewMode={viewMode}
                   ownedIds={ownedIds}
+                  dragging={dragName !== null}
                   onOpen={setDetailCard}
                   onToggleSetting={(key) => toggleSetting(group, key)}
                 />
@@ -603,6 +706,7 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
                   setting={draft.categorySettings?.[b] ?? { inDeck: false, inPrice: false }}
                   viewMode={viewMode}
                   ownedIds={ownedIds}
+                  dragging={dragName !== null}
                   onOpen={setDetailCard}
                   onToggleSetting={(key) => toggleSetting(b, key)}
                 />
@@ -634,6 +738,8 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
         <CardSearchModal
           initialQuery={searchModal}
           onOpenCard={(card) => setDetailCard(card)}
+          deck={draft}
+          update={update}
           onClose={() => {
             setSearchModal(null);
             setQuery("");

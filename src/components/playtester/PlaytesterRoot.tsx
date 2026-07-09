@@ -221,17 +221,24 @@ export function PlaytesterRoot() {
       <RevealOverlay />
 
       <DragOverlay dropAnimation={null}>
-        {dragInst && (
-          <CardImage
-            card={g.cards[dragInst.cardId]}
-            tokenSpec={dragInst.tokenSpec}
-            flipped={dragInst.flipped}
-            faceDown={dragInst.faceDown && dragInst.zone !== "hand"}
-            fit="contain"
-            className="rotate-3 shadow-2xl shadow-black"
-            style={{ width: g.prefs.cardSize, height: Math.round(g.prefs.cardSize * 1.4) }}
-          />
-        )}
+        {dragInst &&
+          (() => {
+            // Cards dragged from the small side piles (library/command/grave/exile)
+            // render larger so they're easy to read while moving.
+            const fromPile = ["library", "command", "graveyard", "exile"].includes(dragInst.zone);
+            const w = fromPile ? Math.max(g.prefs.cardSize, 150) : g.prefs.cardSize;
+            return (
+              <CardImage
+                card={g.cards[dragInst.cardId]}
+                tokenSpec={dragInst.tokenSpec}
+                flipped={dragInst.flipped}
+                faceDown={dragInst.faceDown && dragInst.zone !== "hand"}
+                fit="contain"
+                className="rotate-3 shadow-2xl shadow-black"
+                style={{ width: w, height: Math.round(w * 1.4) }}
+              />
+            );
+          })()}
       </DragOverlay>
 
       {ui.modal.kind === "browse" && (

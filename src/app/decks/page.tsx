@@ -2,14 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import type { Deck } from "@/types";
+import { uid } from "@/lib/game/ids";
 import { getRepo, type ShowcaseDeckMeta } from "@/lib/repo";
 import { MigrationBanner } from "@/components/MigrationBanner";
 
 type DeckMetaWithTags = ShowcaseDeckMeta & { tags?: string[] };
 
 export default function DecksPage() {
+  const router = useRouter();
   const [decks, setDecks] = useState<DeckMetaWithTags[] | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const refresh = useCallback(async () => {
     const repo = getRepo();
@@ -27,6 +32,24 @@ export default function DecksPage() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const createDeck = useCallback(async () => {
+    setCreating(true);
+    try {
+      const deck: Deck = {
+        id: uid("deck"),
+        name: "Untitled deck",
+        format: "commander",
+        commanders: [],
+        entries: [],
+        colorIdentity: [],
+      };
+      await getRepo().saveDeck(deck);
+      router.push(`/d/${deck.id}/edit`);
+    } catch {
+      setCreating(false);
+    }
+  }, [router]);
 
   const allTags = useMemo(() => {
     const tags = new Set<string>();
@@ -50,12 +73,21 @@ export default function DecksPage() {
               Saved showcases — primers, stats, changelogs, and game history.
             </p>
           </div>
-          <Link
-            href="/import"
-            className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-600"
-          >
-            + Import a deck
-          </Link>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => void createDeck()}
+              disabled={creating}
+              className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-600 disabled:opacity-40"
+            >
+              {creating ? "Creating…" : "+ New deck"}
+            </button>
+            <Link
+              href="/import"
+              className="rounded-md border border-stone-700 bg-stone-900 px-4 py-2 text-sm font-semibold text-stone-300 hover:bg-stone-800"
+            >
+              Import a deck
+            </Link>
+          </div>
         </div>
 
         {/* Tag filter */}
@@ -90,7 +122,7 @@ export default function DecksPage() {
             <p className="text-sm text-stone-500">
               {tagFilter
                 ? `No decks tagged #${tagFilter}.`
-                : "No decks saved yet. Import a deck and hit “Save to My Decks”."}
+                : "No decks saved yet. Start a New deck from scratch, or import one and hit “Save to My Decks”."}
             </p>
           </div>
         ) : (

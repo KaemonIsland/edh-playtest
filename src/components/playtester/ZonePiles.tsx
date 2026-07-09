@@ -6,7 +6,14 @@ import { useDraggable } from "@dnd-kit/core";
 import type { ScryCard, Zone } from "@/types";
 import { PLAYER_ID, useGameStore } from "@/lib/game/store";
 import { useUiStore, type MenuItem } from "@/lib/game/uiStore";
-import { resolveDeckTokens } from "@/lib/game/tokens";
+import { resolveDeckTokens, TOKEN_DND_TYPE } from "@/lib/game/tokens";
+import {
+  COUNTER_DND_TYPE,
+  COUNTER_TYPES,
+  loadRecentCounters,
+  pushRecentCounter,
+  type CounterDef,
+} from "@/lib/game/counters";
 import { CardImage } from "@/components/cards/CardImage";
 import { buildCardMenu } from "./cardMenu";
 
@@ -285,20 +292,29 @@ function CommanderCard({
   );
 }
 
-/** The deck's possible tokens (from Scryfall all_parts) as a quick-create pile. */
+/**
+ * The deck's possible tokens (from Scryfall all_parts). Shows one selected token
+ * you can click to create, or drag straight onto the battlefield; a picker (like
+ * the printing chooser) swaps which token is selected. Identical tokens are
+ * consolidated upstream in resolveDeckTokens.
+ */
 function TokensPile() {
   const deck = useGameStore((s) => s.deck);
   const createTokenFromCard = useGameStore((s) => s.createTokenFromCard);
   const setPreview = useUiStore((s) => s.setPreview);
   const [tokens, setTokens] = useState<ScryCard[] | null>(null);
-  const [open, setOpen] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setTokens(null);
+    setSelectedId(null);
     if (deck) {
       void resolveDeckTokens(deck).then((t) => {
-        if (!cancelled) setTokens(t);
+        if (cancelled) return;
+        setTokens(t);
+        setSelectedId(t[0]?.id ?? null);
       });
     }
     return () => {
@@ -306,29 +322,60 @@ function TokensPile() {
     };
   }, [deck]);
 
-  // Hide the pile entirely when the deck makes no tokens.
-  if (tokens !== null && tokens.length === 0) return null;
+  const empty = tokens !== null && tokens.length === 0;
+  const selected = tokens?.find((t) => t.id === selectedId) ?? tokens?.[0] ?? null;
 
   return (
     <div className="flex flex-col items-center gap-1 rounded-lg border border-sky-900/40 bg-stone-900/60 p-2">
       <span className="w-full text-[11px] font-semibold tracking-wide text-sky-400/80">Tokens</span>
-      <button
-        className="relative"
-        onClick={() => tokens && tokens.length > 0 && setOpen(true)}
-        title={tokens === null ? "Finding the deck's tokens…" : "Create a token"}
-      >
-        <div className="flex h-[112px] w-[80px] items-center justify-center rounded-md border border-dashed border-sky-800/60 bg-gradient-to-br from-sky-950/40 to-stone-950 text-2xl">
-          {tokens === null ? "…" : "🪙"}
-        </div>
-        <span className="absolute -right-1.5 -bottom-1.5 rounded-full bg-stone-700 px-1.5 py-0.5 text-[10px] font-bold text-stone-100 shadow">
-          {tokens?.length ?? 0}
-        </span>
-      </button>
 
-      {open && tokens && (
+      {selected ? (
+        <div
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.setData(TOKEN_DND_TYPE, JSON.stringify(selected));
+            e.dataTransfer.setData("text/plain", selected.name);
+            e.dataTransfer.effectAllowed = "copy";
+          }}
+          onClick={() => createTokenFromCard(selected)}
+          onMouseEnter={() => setPreview({ card: selected, flipped: 0 })}
+          onMouseLeave={() => setPreview(null)}
+          title={`${selected.name} — click to create, or drag onto the battlefield`}
+          className="relative cursor-grab active:cursor-grabbing"
+        >
+          <CardImage
+            card={selected}
+            className="h-[112px] w-[80px] ring-1 ring-sky-800/60 transition hover:ring-2 hover:ring-sky-500"
+          />
+          <span className="absolute -right-1.5 -bottom-1.5 rounded-full bg-stone-700 px-1.5 py-0.5 text-[10px] font-bold text-stone-100 shadow">
+            {tokens?.length ?? 0}
+          </span>
+        </div>
+      ) : (
+        <div
+          className={`flex h-[112px] w-[80px] items-center justify-center rounded-md border border-dashed bg-gradient-to-br from-sky-950/40 to-stone-950 text-2xl ${
+            empty ? "border-stone-700 opacity-60" : "border-sky-800/60"
+          }`}
+          title={empty ? "No tokens detected for this deck" : "Finding the deck's tokens…"}
+        >
+          {tokens === null ? "…" : "∅"}
+        </div>
+      )}
+
+      {tokens && tokens.length > 1 && (
+        <button
+          onClick={() => setPickerOpen(true)}
+          className="w-full rounded border border-stone-700 bg-stone-900 px-1 py-0.5 text-[10px] font-semibold text-stone-300 hover:bg-stone-800"
+          title="Choose which token is loaded"
+        >
+          Choose ▾
+        </button>
+      )}
+
+      {pickerOpen && tokens && (
         <div
           className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-          onClick={() => setOpen(false)}
+          onClick={() => setPickerOpen(false)}
         >
           <div
             className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-stone-700 bg-stone-950 p-4 shadow-2xl"
@@ -336,40 +383,148 @@ function TokensPile() {
           >
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm font-bold text-stone-200">
-                Deck tokens <span className="font-normal text-stone-500">({tokens.length})</span>
+                Choose a token <span className="font-normal text-stone-500">({tokens.length})</span>
               </h2>
               <button
-                onClick={() => setOpen(false)}
+                onClick={() => setPickerOpen(false)}
                 className="rounded px-2 py-0.5 text-stone-500 hover:bg-stone-800 hover:text-stone-200"
               >
                 ✕
               </button>
             </div>
             <p className="mb-3 text-[11px] text-stone-500">
-              Click a token to put it onto your battlefield. (Detected from your cards via Scryfall.)
+              Pick the token to load — then click it or drag it onto the battlefield. (Detected from
+              your cards via Scryfall.)
             </p>
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
               {tokens.map((t) => (
                 <button
                   key={t.id}
                   onClick={() => {
-                    createTokenFromCard(t);
-                    setOpen(false);
+                    setSelectedId(t.id);
+                    setPickerOpen(false);
                   }}
                   className="group flex flex-col gap-1 text-left"
                   onMouseEnter={() => setPreview({ card: t, flipped: 0 })}
                   onMouseLeave={() => setPreview(null)}
-                  title={`Create ${t.name}`}
+                  title={`Load ${t.name}`}
                 >
                   <CardImage
                     card={t}
-                    className="aspect-[5/7] w-full transition group-hover:ring-2 group-hover:ring-sky-500"
+                    className={`aspect-[5/7] w-full transition group-hover:ring-2 group-hover:ring-sky-500 ${
+                      t.id === selected?.id ? "ring-2 ring-sky-400" : ""
+                    }`}
                   />
                   <span className="truncate text-[10px] text-stone-400">{t.name}</span>
                 </button>
               ))}
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A single draggable counter chip (native HTML5 drag onto a battlefield card). */
+function CounterChip({
+  def,
+  onUsed,
+}: {
+  def: CounterDef;
+  onUsed: (name: string) => void;
+}) {
+  return (
+    <button
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData(COUNTER_DND_TYPE, def.name);
+        e.dataTransfer.setData("text/plain", def.name);
+        e.dataTransfer.effectAllowed = "copy";
+        onUsed(def.name);
+      }}
+      title={`Drag “${def.label}” onto a card`}
+      className="flex aspect-square cursor-grab flex-col items-center justify-center gap-0.5 rounded-md border border-stone-700 bg-stone-900 p-1 text-center hover:border-fuchsia-600/60 hover:bg-stone-800 active:cursor-grabbing"
+    >
+      <span className="text-base leading-none">{def.icon}</span>
+      <span className="w-full truncate text-[8px] leading-tight text-stone-400">{def.label}</span>
+    </button>
+  );
+}
+
+/**
+ * Dice Bag: a box that opens a floating tray of counters. Drag a counter onto a
+ * battlefield card to add it (handled by BattlefieldCard's native drop). A
+ * "recently used" row floats to the top for quick re-use.
+ */
+function DiceBag() {
+  const [open, setOpen] = useState(false);
+  const [recent, setRecent] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (open) setRecent(loadRecentCounters());
+  }, [open]);
+
+  const onUsed = (name: string) => setRecent(pushRecentCounter(name));
+  const byName = (name: string): CounterDef =>
+    COUNTER_TYPES.find((c) => c.name === name) ?? { name, label: name, icon: "⬤" };
+
+  return (
+    <div className="flex flex-col items-center gap-1 rounded-lg border border-fuchsia-900/40 bg-stone-900/60 p-2">
+      <span className="w-full text-[11px] font-semibold tracking-wide text-fuchsia-400/80">
+        Dice Bag
+      </span>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        title="Open the counter tray"
+        className="relative"
+      >
+        <div
+          className={`flex h-[112px] w-[80px] items-center justify-center rounded-md border border-dashed bg-gradient-to-br from-fuchsia-950/40 to-stone-950 text-2xl transition ${
+            open ? "border-fuchsia-600/70" : "border-fuchsia-800/60"
+          }`}
+        >
+          🎲
+        </div>
+      </button>
+
+      {open && (
+        <div
+          className="fixed right-[136px] bottom-24 z-40 w-60 rounded-xl border border-stone-700 bg-stone-950/95 p-3 shadow-2xl backdrop-blur"
+          // Keep clicks inside from bubbling to the board.
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs font-bold text-stone-200">Counters</span>
+            <button
+              onClick={() => setOpen(false)}
+              className="rounded px-1.5 text-stone-500 hover:bg-stone-800 hover:text-stone-200"
+            >
+              ✕
+            </button>
+          </div>
+
+          {recent.length > 0 && (
+            <div className="mb-2">
+              <div className="mb-1 text-[9px] font-bold tracking-wide text-stone-500 uppercase">
+                Recently used
+              </div>
+              <div className="grid grid-cols-6 gap-1">
+                {recent.map((name) => (
+                  <CounterChip key={`r-${name}`} def={byName(name)} onUsed={onUsed} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-4 gap-1">
+            {COUNTER_TYPES.map((def) => (
+              <CounterChip key={def.name} def={def} onUsed={onUsed} />
+            ))}
+          </div>
+          <p className="mt-2 text-[9px] leading-snug text-stone-600">
+            Drag a counter onto a battlefield card to add one.
+          </p>
         </div>
       )}
     </div>
@@ -385,6 +540,7 @@ export function ZonePiles() {
       <ZonePile zone="exile" label="Exile" topVisible={true} />
       <CommandZone />
       <TokensPile />
+      <DiceBag />
     </div>
   );
 }

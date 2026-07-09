@@ -105,6 +105,10 @@ export interface GameStore extends GameCore {
 
   // card movement & state
   moveCard: (instanceId: string, to: Zone, opts?: MoveOptions) => void;
+  /** Move several cards at once (e.g. a marquee selection), as one undo step. */
+  moveCards: (instanceIds: string[], to: Zone, opts?: MoveOptions) => void;
+  /** Shuffle a group of cards among themselves and place them on the library bottom. */
+  shuffleToLibraryBottom: (instanceIds: string[]) => void;
   setPosition: (instanceId: string, pos: { x: number; y: number }) => void;
   /** Move several battlefield cards at once (one undo step). */
   setPositions: (updates: Record<string, { x: number; y: number }>) => void;
@@ -123,7 +127,12 @@ export interface GameStore extends GameCore {
   attach: (instanceId: string, hostId: string) => void;
   unattach: (instanceId: string) => void;
   createToken: (spec: TokenSpec, count?: number, playerId?: string) => void;
-  createTokenFromCard: (card: ScryCard, count?: number, playerId?: string) => void;
+  createTokenFromCard: (
+    card: ScryCard,
+    count?: number,
+    playerId?: string,
+    position?: { x: number; y: number },
+  ) => void;
   cloneInstance: (instanceId: string) => void;
   removeInstance: (instanceId: string) => void;
 
@@ -594,6 +603,76 @@ export const useGameStore = create<GameStore>((set, get) => {
       });
     },
 
+    moveCards: (instanceIds, to, opts = {}) => {
+      const s = get();
+      mutate((core) => {
+        const names: string[] = [];
+        for (const id of instanceIds) {
+          const inst = core.instances[id];
+          if (!inst) continue;
+          const name = cardName({ ...core, cards: s.cards }, inst);
+          // Tokens cease to exist outside the battlefield.
+          if (inst.isToken && to !== "battlefield" && to !== "stack") {
+            removeFromZone(core, inst);
+            breakAttachments(core, inst);
+            delete core.instances[id];
+            names.push(`${name} (token)`);
+            continue;
+          }
+          const from = inst.zone;
+          placeInZone(core, inst, to, { ...opts, silent: true });
+          const player = core.players[inst.ownerId];
+          if (
+            player &&
+            player.commanderOracleIds.includes(inst.oracleId) &&
+            from === "command" &&
+            (to === "battlefield" || to === "stack")
+          ) {
+            player.commanderTax[inst.oracleId] = (player.commanderTax[inst.oracleId] ?? 0) + 1;
+          }
+          names.push(name);
+        }
+        if (names.length === 0) return;
+        const placement =
+          to === "library"
+            ? opts.libraryPlacement === "bottom"
+              ? " (bottom)"
+              : opts.libraryPlacement === "shuffle"
+                ? " (shuffled in)"
+                : " (top)"
+            : "";
+        pushLog(core, PLAYER_ID, {
+          type: "game",
+          message: `Moved ${names.length} card${names.length === 1 ? "" : "s"} to ${to}${placement}: ${names.join(", ")}.`,
+        });
+      });
+    },
+
+    shuffleToLibraryBottom: (instanceIds) => {
+      const s = get();
+      mutate((core) => {
+        const order = shuffled([...instanceIds]);
+        const names: string[] = [];
+        for (const id of order) {
+          const inst = core.instances[id];
+          if (!inst) continue;
+          if (inst.isToken) {
+            removeFromZone(core, inst);
+            breakAttachments(core, inst);
+            delete core.instances[id];
+            continue;
+          }
+          names.push(cardName({ ...core, cards: s.cards }, inst));
+          placeInZone(core, inst, "library", { libraryPlacement: "bottom", silent: true });
+        }
+        if (names.length === 0) return;
+        pushLog(core, PLAYER_ID, {
+          type: "game",
+          message: `Shuffled ${names.length} card${names.length === 1 ? "" : "s"} to the bottom of the library: ${names.join(", ")}.`,
+        });
+      });
+    },
+
     setPosition: (instanceId, pos) => {
       // Position-only drags are frequent; still undoable but logged silently.
       mutate((core) => {
@@ -846,7 +925,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         });
       }),
 
-    createTokenFromCard: (card, count = 1, playerId = PLAYER_ID) => {
+    createTokenFromCard: (card, count = 1, playerId = PLAYER_ID, position) => {
       const s = get();
       if (!s.cards[card.id]) set({ cards: { ...s.cards, [card.id]: card } });
       mutate((core) => {
@@ -865,7 +944,10 @@ export const useGameStore = create<GameStore>((set, get) => {
             attachments: [],
             isToken: true,
             enteredOnTurn: core.turn,
-            position: { x: 40 + i * 30, y: 40 + i * 20 },
+            // Drop position (when dragged onto the field), else a small cascade.
+            position: position
+              ? { x: position.x + i * 30, y: position.y + i * 20 }
+              : { x: 40 + i * 30, y: 40 + i * 20 },
           };
           core.instances[inst.instanceId] = inst;
           core.zoneOrder[playerId]!.battlefield.push(inst.instanceId);

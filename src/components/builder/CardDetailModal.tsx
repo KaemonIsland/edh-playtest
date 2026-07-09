@@ -18,6 +18,7 @@ import { loadPriceIndex, priceOf, usePriceStore, PRICE_SOURCE_LABEL } from "@/li
 import { typeGroup } from "@/lib/deck/stats";
 import { CardImage } from "@/components/cards/CardImage";
 import { ManaCost } from "@/components/cards/ManaCost";
+import { PrintingTile } from "@/components/collection/PrintingTile";
 
 type Tab = "options" | "indecks" | "collection" | "info" | "rulings";
 
@@ -89,6 +90,8 @@ export function CardDetailModal({
   const [addBoard, setAddBoard] = useState<"Maybeboard" | "Ideas">("Maybeboard");
   const [addNote, setAddNote] = useState<string | null>(null);
   const [printPage, setPrintPage] = useState(0);
+  // Which face of a double-faced card is shown in the image (0 = front).
+  const [flip, setFlip] = useState(0);
 
   // Prices come from the synced MTGJSON index (keyed by Scryfall id), not the
   // card's embedded Scryfall price — MTGJSON-sourced cards carry no `prices`.
@@ -124,6 +127,21 @@ export function CardDetailModal({
     for (const e of deck?.entries ?? []) for (const c of e.categories) names.add(c);
     return [...names].sort();
   }, [deck?.entries]);
+
+  // Double-faced support. Deck/collection cards (often MTGJSON-sourced) lack
+  // per-face data, so fall back to the Scryfall printing we lazily load below —
+  // it carries each face's text and image. Any multi-face card (DFC, split,
+  // adventure, room…) exposes both faces' info; a distinct back image also
+  // enables flipping the picture.
+  const faceCard = useMemo(() => {
+    if ((shown.card_faces?.length ?? 0) > 1) return shown;
+    const match =
+      printings?.find((p) => p.id === shown.id) ??
+      printings?.find((p) => p.oracle_id === shown.oracle_id);
+    return match && (match.card_faces?.length ?? 0) > 1 ? match : shown;
+  }, [shown, printings]);
+  const faces = (faceCard.card_faces?.length ?? 0) > 1 ? faceCard.card_faces! : null;
+  const canFlip = !!faces && !!faces[1]?.image_uris;
 
   const refreshOwned = useCallback(async () => {
     setOwned(await getRepo().getCollectionByOracle(card.oracle_id));
@@ -178,6 +196,7 @@ export function CardDetailModal({
     setAllPrintingsOpen(false);
     setPrintFilter("");
     setPrintPage(0);
+    setFlip(0);
   }, [card.oracle_id]);
 
   // Lazy-load printings for the dropdown.
@@ -295,6 +314,7 @@ export function CardDetailModal({
     });
     onNavigate?.(p); // keep the modal's `card` in sync with the chosen printing
     setAllPrintingsOpen(false);
+    setFlip(0);
   };
 
   /** Adjust owned quantity of the shown printing in a given finish. */
@@ -366,7 +386,18 @@ export function CardDetailModal({
         <div className="flex flex-col gap-5 p-5 sm:flex-row">
           {/* Card image (always visible) */}
           <div className="mx-auto w-64 shrink-0 sm:mx-0">
-            <CardImage card={shown} className="aspect-[5/7] w-full" />
+            <div className="relative">
+              <CardImage card={faceCard} flipped={flip} className="aspect-[5/7] w-full" />
+              {canFlip && (
+                <button
+                  onClick={() => setFlip((f) => (f === 0 ? 1 : 0))}
+                  className="absolute right-2 bottom-2 flex items-center gap-1 rounded-full bg-black/75 px-2.5 py-1 text-[11px] font-bold text-white shadow-lg ring-1 ring-white/20 hover:bg-black/90"
+                  title="Flip to the other face"
+                >
+                  ↻ Flip
+                </button>
+              )}
+            </div>
             <div className="mt-1.5 flex items-center justify-between text-[11px]">
               <span className="text-stone-500">{shown.set_name ?? ""}</span>
               <span className="font-semibold text-emerald-400" title={PRICE_SOURCE_LABEL[priceSource]}>
@@ -517,15 +548,26 @@ export function CardDetailModal({
                       Quick category options
                     </div>
                     <div className="flex flex-wrap gap-1.5">
-                      {QUICK_CATEGORIES.map((cat) => (
-                        <button
-                          key={cat}
-                          onClick={() => addCategory(cat)}
-                          className="rounded-md border border-stone-700 bg-stone-900 px-3 py-1.5 text-[11px] font-semibold text-stone-200 hover:bg-stone-800"
-                        >
-                          {cat}
-                        </button>
-                      ))}
+                      {allCategories
+                        .filter((cat) => !(entry?.categories ?? []).includes(cat))
+                        .map((cat) => (
+                          <button
+                            key={cat}
+                            onClick={() => addCategory(cat)}
+                            className={`rounded-md border px-3 py-1.5 text-[11px] font-semibold text-stone-200 hover:bg-stone-800 ${
+                              QUICK_CATEGORIES.includes(cat)
+                                ? "border-stone-700 bg-stone-900"
+                                : "border-emerald-800/50 bg-emerald-950/20"
+                            }`}
+                            title={
+                              QUICK_CATEGORIES.includes(cat)
+                                ? undefined
+                                : "Already used in this deck"
+                            }
+                          >
+                            {cat}
+                          </button>
+                        ))}
                     </div>
                   </div>
                 </div>
@@ -748,18 +790,47 @@ export function CardDetailModal({
 
             {tab === "info" && (
               <div className="flex flex-col gap-3 text-sm">
-                <div className="flex items-center gap-2">
-                  <ManaCost cost={shown.mana_cost} size={16} />
-                  <span className="text-xs text-stone-500">MV {shown.cmc}</span>
-                </div>
-                <div className="text-xs font-semibold text-stone-300">{shown.type_line}</div>
-                <p className="text-xs leading-relaxed whitespace-pre-line text-stone-300">
-                  {oracleText || "—"}
-                </p>
-                {(shown.power !== undefined || shown.loyalty !== undefined) && (
-                  <div className="text-xs font-bold text-stone-400">
-                    {shown.power !== undefined ? `${shown.power}/${shown.toughness}` : `Loyalty ${shown.loyalty}`}
+                {faces ? (
+                  // Multi-faced card: show each face's printed info in order.
+                  <div className="flex flex-col divide-y divide-stone-800">
+                    {faces.map((face, i) => (
+                      <div key={i} className="flex flex-col gap-1.5 py-2 first:pt-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-stone-200">{face.name}</span>
+                          <ManaCost cost={face.mana_cost} size={14} />
+                        </div>
+                        <div className="text-[11px] font-semibold text-stone-400">{face.type_line}</div>
+                        <p className="text-xs leading-relaxed whitespace-pre-line text-stone-300">
+                          {face.oracle_text || "—"}
+                        </p>
+                        {(face.power !== undefined || face.loyalty !== undefined) && (
+                          <div className="text-xs font-bold text-stone-400">
+                            {face.power !== undefined
+                              ? `${face.power}/${face.toughness}`
+                              : `Loyalty ${face.loyalty}`}
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <ManaCost cost={shown.mana_cost} size={16} />
+                      <span className="text-xs text-stone-500">MV {shown.cmc}</span>
+                    </div>
+                    <div className="text-xs font-semibold text-stone-300">{shown.type_line}</div>
+                    <p className="text-xs leading-relaxed whitespace-pre-line text-stone-300">
+                      {oracleText || "—"}
+                    </p>
+                    {(shown.power !== undefined || shown.loyalty !== undefined) && (
+                      <div className="text-xs font-bold text-stone-400">
+                        {shown.power !== undefined
+                          ? `${shown.power}/${shown.toughness}`
+                          : `Loyalty ${shown.loyalty}`}
+                      </div>
+                    )}
+                  </>
                 )}
                 <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-stone-500">
                   <span>Set: {shown.set_name ?? "—"}</span>
@@ -834,59 +905,17 @@ export function CardDetailModal({
               <p className="text-xs text-stone-600">Loading printings…</p>
             ) : (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {printPageItems.map((p) => {
-                  const nf = ownedQty(p.id, "nonfoil");
-                  const fl = ownedQty(p.id, "foil");
-                  const owned = nf + fl;
-                  return (
-                    <div
-                      key={p.id}
-                      className={`flex flex-col gap-1.5 rounded-md border bg-stone-900 p-2 ${
-                        p.id === shown.id
-                          ? "border-emerald-600"
-                          : owned > 0
-                            ? "border-amber-700/60"
-                            : "border-stone-800"
-                      }`}
-                    >
-                      <button
-                        onClick={() => onNavigate?.(p)}
-                        className="group relative"
-                        title="View this printing"
-                      >
-                        <CardImage
-                          card={p}
-                          className={`aspect-[5/7] w-full transition group-hover:ring-2 group-hover:ring-sky-500 ${
-                            owned === 0 ? "opacity-50 grayscale" : ""
-                          }`}
-                        />
-                        {owned > 0 && (
-                          <span className="absolute top-1 left-1 rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-black">
-                            ×{owned}
-                          </span>
-                        )}
-                      </button>
-                      <div className="truncate text-[11px] text-stone-300" title={p.set_name}>
-                        {p.set_name ?? p.set?.toUpperCase()}
-                      </div>
-                      <div className="text-[10px] text-stone-500">
-                        NF {fmtPrice(p, "nonfoil")} · F {fmtPrice(p, "foil")}
-                      </div>
-                      <div className="flex items-center justify-between gap-1">
-                        <PrintingQty
-                          label="NF"
-                          qty={nf}
-                          onAdjust={(d) => void adjustOwnedFor(p, "nonfoil", d)}
-                        />
-                        <PrintingQty
-                          label="F"
-                          qty={fl}
-                          onAdjust={(d) => void adjustOwnedFor(p, "foil", d)}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
+                {printPageItems.map((p) => (
+                  <PrintingTile
+                    key={p.id}
+                    card={p}
+                    ownedNonfoil={ownedQty(p.id, "nonfoil")}
+                    ownedFoil={ownedQty(p.id, "foil")}
+                    selected={p.id === shown.id}
+                    onOpen={() => onNavigate?.(p)}
+                    onAdjust={(finish, d) => adjustOwnedFor(p, finish, d)}
+                  />
+                ))}
               </div>
             )}
           </div>
@@ -979,37 +1008,6 @@ export function CardDetailModal({
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-/** Compact finish quantity stepper used in the all-printings list. */
-function PrintingQty({
-  label,
-  qty,
-  onAdjust,
-}: {
-  label: string;
-  qty: number;
-  onAdjust: (delta: number) => void;
-}) {
-  return (
-    <div className="flex items-center gap-0.5">
-      <span className="w-4 text-[8px] font-bold text-stone-500">{label}</span>
-      <button
-        onClick={() => onAdjust(-1)}
-        disabled={qty === 0}
-        className="flex h-5 w-5 items-center justify-center rounded bg-stone-800 text-[11px] font-bold text-rose-400 hover:bg-stone-700 disabled:opacity-30"
-      >
-        −
-      </button>
-      <span className="w-5 text-center text-[11px] font-bold text-stone-200">{qty}</span>
-      <button
-        onClick={() => onAdjust(1)}
-        className="flex h-5 w-5 items-center justify-center rounded bg-stone-800 text-[11px] font-bold text-emerald-400 hover:bg-stone-700"
-      >
-        +
-      </button>
     </div>
   );
 }

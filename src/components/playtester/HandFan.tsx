@@ -91,9 +91,16 @@ export const HandFan = memo(function HandFan() {
   const bottoming = useUiStore((s) => s.bottoming);
   const bottomingSelected = useUiStore((s) => s.bottomingSelected);
   const clearBottoming = useUiStore((s) => s.clearBottoming);
+  const dragging = useUiStore((s) => s.dragging);
+  const boardHover = useUiStore((s) => s.boardHover);
 
   const { setNodeRef, isOver } = useDroppable({ id: "hand" });
   const handIds = zoneOrder[PLAYER_ID]?.hand ?? [];
+
+  // Keep the hand in place, but fade the fan so the battlefield reads through it:
+  // while dragging (so you can place cards), or while hovering a board card that
+  // may sit under the fan. Hovering the hand itself (isOver) keeps it solid.
+  const fanOpacity = isOver ? 1 : dragging ? 0.3 : boardHover ? 0.45 : 1;
 
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex items-end justify-center gap-3 pb-1">
@@ -108,10 +115,23 @@ export const HandFan = memo(function HandFan() {
 
       <div
         ref={setNodeRef}
-        className={`pointer-events-auto flex min-h-[120px] min-w-[200px] items-end justify-center rounded-t-xl px-6 pt-8 transition-colors ${
-          isOver ? "bg-emerald-900/20" : ""
+        className={`pointer-events-auto relative flex h-[100px] min-w-[260px] items-end justify-center overflow-visible rounded-t-xl px-6 transition-colors duration-150 ${
+          isOver ? "bg-emerald-900/30" : ""
         }`}
       >
+        {/* The drop target is only this ~100px box; the fan overflows above it
+            without being part of the drop zone, so it doesn't cover the board. */}
+        {dragging && (
+          <div
+            className={`pointer-events-none absolute inset-x-2 inset-y-1 z-30 flex items-center justify-center rounded-lg border-2 border-dashed text-[11px] font-bold tracking-wide uppercase transition ${
+              isOver
+                ? "border-emerald-500 bg-emerald-600/30 text-emerald-50"
+                : "border-sky-700/60 bg-stone-950/70 text-sky-300/80"
+            }`}
+          >
+            ↓ To hand
+          </div>
+        )}
         {bottoming > 0 && (
           <div className="absolute -top-12 left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 rounded-full bg-rose-900/95 px-4 py-2 text-xs text-white shadow-xl">
             <span>
@@ -133,22 +153,27 @@ export const HandFan = memo(function HandFan() {
             </button>
           </div>
         )}
-        {handIds.map((id, i) => {
-          const inst = instances[id];
-          if (!inst) return null;
-          return (
-            <HandCard
-              key={id}
-              inst={inst}
-              card={cards[inst.cardId]}
-              index={i}
-              total={handIds.length}
-            />
-          );
-        })}
-        {handIds.length === 0 && (
-          <div className="pb-6 text-xs text-stone-600 select-none">Hand is empty</div>
-        )}
+        <div
+          className="flex items-end justify-center transition-opacity duration-150"
+          style={{ opacity: fanOpacity }}
+        >
+          {handIds.map((id, i) => {
+            const inst = instances[id];
+            if (!inst) return null;
+            return (
+              <HandCard
+                key={id}
+                inst={inst}
+                card={cards[inst.cardId]}
+                index={i}
+                total={handIds.length}
+              />
+            );
+          })}
+          {handIds.length === 0 && (
+            <div className="pb-6 text-xs text-stone-600 select-none">Hand is empty</div>
+          )}
+        </div>
       </div>
 
       <button

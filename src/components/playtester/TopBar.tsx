@@ -55,8 +55,16 @@ export function TopBar() {
         router.push(`/d/${g.deck.id}`);
       },
     },
+    {
+      label: "Edit deck",
+      onClick: async () => {
+        if (!g.deck) return;
+        const { getRepo } = await import("@/lib/repo");
+        await getRepo().saveDeck(g.deck);
+        router.push(`/d/${g.deck.id}/edit`);
+      },
+    },
     { label: "", separator: true },
-    { label: "Save / load snapshots…", onClick: () => openModal({ kind: "snapshots" }) },
     { label: "Settings…", onClick: () => openModal({ kind: "settings" }) },
     { label: "", separator: true },
     { label: "Import a different deck", danger: true, onClick: () => router.push("/import") },

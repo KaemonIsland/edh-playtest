@@ -10,7 +10,7 @@ import { fetchAllSets, fetchSetCards, type SetInfo } from "@/lib/cards/carddb";
 import { cardComparator, type CardSort } from "@/lib/cards/sort";
 import { CardDetailModal } from "@/components/builder/CardDetailModal";
 import { CardSearchModal } from "@/components/builder/CardSearchModal";
-import { CardGridTile } from "@/components/collection/CardGridTile";
+import { PrintingTile } from "@/components/collection/PrintingTile";
 import { SetGrid, type SetGridItem } from "@/components/collection/SetGrid";
 import {
   FilterSidebar,
@@ -211,6 +211,7 @@ export default function AllCardsPage() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            onFocus={(e) => e.currentTarget.select()}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 setSearchModal(search);
@@ -277,15 +278,16 @@ export default function AllCardsPage() {
                   No cards match these filters.
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
                   {shownCards.map((c) => (
-                    <CardGridTile
+                    <PrintingTile
                       key={c.id}
                       card={c}
-                      owned={ownedQty(c.id, "nonfoil")}
-                      price={priceOf(c, "nonfoil")}
+                      ownedNonfoil={ownedQty(c.id, "nonfoil")}
+                      ownedFoil={ownedQty(c.id, "foil")}
+                      showSetInfo={false}
                       onOpen={() => setDetailCard(c)}
-                      onAdjust={(d) => void adjust(c, "nonfoil", d)}
+                      onAdjust={(finish, d) => adjust(c, finish, d)}
                     />
                   ))}
                   {limit < visibleCards.length && (
@@ -296,8 +298,8 @@ export default function AllCardsPage() {
                 </div>
               )}
               <p className="mt-3 text-[10px] text-stone-600">
-                +/- adds nonfoil copies. For foil/etched or other printings, click a card → Collection
-                Records.
+                NF/F +/- add nonfoil/foil copies to your collection (saved a moment after you stop
+                clicking). Click a card for other printings and full details.
               </p>
             </div>
           </>

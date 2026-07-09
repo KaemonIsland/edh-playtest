@@ -125,8 +125,10 @@ export interface SearchFilters {
   rarities?: string[];
   /** Keyword/ability the card has (e.g. "flying"). */
   keyword?: string;
-  /** Restrict to a set code. */
-  set?: string;
+  /** Restrict to these set codes (any match). */
+  sets?: string[];
+  /** Illustrator name (printing-level — forces a Scryfall lookup). */
+  artist?: string;
   /** Only cards that can be a commander. */
   commander?: boolean;
 }
@@ -155,7 +157,8 @@ function hasAnyFilter(f: SearchFilters): boolean {
       f.toughness !== undefined ||
       (f.rarities && f.rarities.length) ||
       f.keyword?.trim() ||
-      f.set?.trim() ||
+      (f.sets && f.sets.length) ||
+      f.artist?.trim() ||
       f.commander,
   );
 }
@@ -164,14 +167,34 @@ function hasAnyFilter(f: SearchFilters): boolean {
 export async function advancedSearchCards(f: SearchFilters, limit = 120): Promise<ScryCard[]> {
   if (!hasAnyFilter(f)) return [];
 
-  if (getCardDbStatus().syncedAt) {
+  // The oracle DB is printing-agnostic, so artist (an illustrator credit that
+  // varies per printing) can only be answered by Scryfall — fall through.
+  if (getCardDbStatus().syncedAt && !f.artist?.trim()) {
     const name = f.name?.trim().toLowerCase();
     const typeTerms = f.type?.trim().toLowerCase().split(/\s+/).filter(Boolean) ?? [];
     const text = f.text?.trim().toLowerCase();
     const colors = f.colors ?? [];
     const rarities = (f.rarities ?? []).map((r) => r.toLowerCase());
     const keyword = f.keyword?.trim().toLowerCase();
-    const set = f.set?.trim().toLowerCase();
+    const sets = (f.sets ?? []).map((s) => s.trim().toLowerCase()).filter(Boolean);
+
+    // Fast path: a name-only query uses the indexed prefix lookup (and a short
+    // substring fill) instead of scanning the whole table — far quicker than a
+    // full predicate scan, which is what makes the common "type a name" search
+    // feel slow.
+    const onlyName =
+      !!name &&
+      typeTerms.length === 0 &&
+      !text &&
+      colors.length === 0 &&
+      f.mv === undefined &&
+      f.power === undefined &&
+      f.toughness === undefined &&
+      rarities.length === 0 &&
+      !keyword &&
+      sets.length === 0 &&
+      !f.commander;
+    if (onlyName) return (await searchCards(name, limit)).slice().sort(byNewest);
     const num = (raw: string | undefined): number | null => {
       const n = parseFloat(raw ?? "");
       return Number.isFinite(n) ? n : null;
@@ -210,7 +233,7 @@ export async function advancedSearchCards(f: SearchFilters, limit = 120): Promis
         }
         if (rarities.length && !rarities.includes((c.rarity ?? "").toLowerCase())) return false;
         if (keyword && !(c.keywords ?? []).some((k) => k.toLowerCase() === keyword)) return false;
-        if (set && (c.set ?? "").toLowerCase() !== set) return false;
+        if (sets.length && !sets.includes((c.set ?? "").toLowerCase())) return false;
         if (f.commander && !isCommanderCard(c)) return false;
         return true;
       })
@@ -236,7 +259,8 @@ export async function advancedSearchCards(f: SearchFilters, limit = 120): Promis
     parts.push(`tou${f.toughnessOp === "=" ? "=" : f.toughnessOp}${f.toughness}`);
   if (f.rarities && f.rarities.length) parts.push(`(${f.rarities.map((r) => `r:${r}`).join(" or ")})`);
   if (f.keyword?.trim()) parts.push(`keyword:${f.keyword.trim()}`);
-  if (f.set?.trim()) parts.push(`s:${f.set.trim()}`);
+  if (f.sets && f.sets.length) parts.push(`(${f.sets.map((s) => `s:${s.trim()}`).join(" or ")})`);
+  if (f.artist?.trim()) parts.push(`a:"${f.artist.trim()}"`);
   if (f.commander) parts.push("is:commander");
   if (parts.length === 0) return [];
   const res = await fetch(`/api/cards/search?q=${encodeURIComponent(parts.join(" "))}`);
@@ -251,6 +275,28 @@ export async function fetchPrintings(oracleId: string): Promise<ScryCard[]> {
   if (!res.ok) return [];
   const data = (await res.json()) as { cards: ScryCard[] };
   return data.cards;
+}
+
+/**
+ * All printings for many oracle ids at once, from the local MTGJSON tables
+ * (offline, one request) — used to show every variant inline in search.
+ * Returns [] if the tables aren't synced.
+ */
+export async function fetchPrintingsByOracleIds(oracleIds: string[]): Promise<ScryCard[]> {
+  const ids = [...new Set(oracleIds.filter(Boolean))];
+  if (ids.length === 0) return [];
+  try {
+    const res = await fetch("/api/mtgjson/printings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ oracleIds: ids }),
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { printings: ScryCard[] };
+    return data.printings;
+  } catch {
+    return [];
+  }
 }
 
 export interface SetInfo {

@@ -261,6 +261,7 @@ export default function CollectionPage() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              onFocus={(e) => e.currentTarget.select()}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   setSearchModal(search);

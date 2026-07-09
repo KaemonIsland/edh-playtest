@@ -75,11 +75,23 @@ function addCountersSubmenu(instanceId: string): MenuItem[] {
   return items;
 }
 
-function moveToSubmenu(instanceId: string, currentZone: Zone, isCommander: boolean): MenuItem[] {
+function moveToSubmenu(
+  instanceIds: string[],
+  currentZone: Zone,
+  isCommander: boolean,
+): MenuItem[] {
   const g = useGameStore.getState();
+  const group = instanceIds.length > 1;
   const move = (to: Zone, label: string, opts?: Parameters<typeof g.moveCard>[2]): MenuItem => ({
     label,
-    onClick: () => g.moveCard(instanceId, to, opts),
+    onClick: () => {
+      if (group) {
+        g.moveCards(instanceIds, to, opts);
+        useUiStore.getState().clearSelected();
+      } else {
+        g.moveCard(instanceIds[0]!, to, opts);
+      }
+    },
   });
 
   const items: MenuItem[] = [];
@@ -95,11 +107,23 @@ function moveToSubmenu(instanceId: string, currentZone: Zone, isCommander: boole
     move("library", "Bottom of library", { libraryPlacement: "bottom" }),
     move("library", "Shuffle into library", { libraryPlacement: "shuffle" }),
   );
+  if (group) {
+    items.push(
+      { label: "", separator: true },
+      {
+        label: "Shuffle group → bottom of library",
+        icon: "🔀",
+        onClick: () => {
+          g.shuffleToLibraryBottom(instanceIds);
+          useUiStore.getState().clearSelected();
+        },
+      },
+    );
+  }
 
-  // Card theft: hand control of the card to another player's battlefield.
-  // It still belongs to its owner — leaving the battlefield sends it back to
-  // the owner's zones.
-  const inst = g.instances[instanceId];
+  // Card theft (single card only): hand control to another player's battlefield.
+  // It still belongs to its owner — leaving the battlefield sends it back.
+  const inst = group ? undefined : g.instances[instanceIds[0]!];
   if (inst) {
     const currentController =
       currentZone === "battlefield" ? controllerOf(inst) : inst.ownerId;
@@ -113,7 +137,7 @@ function moveToSubmenu(instanceId: string, currentZone: Zone, isCommander: boole
             : `${g.players[pid]?.name ?? "Opponent"}'s battlefield`;
         items.push({
           label,
-          onClick: () => g.moveCard(instanceId, "battlefield", { controllerId: pid }),
+          onClick: () => g.moveCard(instanceIds[0]!, "battlefield", { controllerId: pid }),
         });
       }
     }
@@ -154,32 +178,63 @@ export function buildCardMenu(instanceId: string): MenuItem[] {
   const isCommander =
     g.players[inst.ownerId]?.commanderOracleIds.includes(inst.oracleId) ?? false;
 
+  // When the right-clicked card is part of a marquee selection (battlefield
+  // only), the move/tap actions act on the whole group.
+  const selection = useUiStore.getState().selected;
+  const group =
+    inst.zone === "battlefield" && selection.length > 1 && selection.includes(instanceId);
+  const targets = group ? selection : [instanceId];
+
   const items: MenuItem[] = [];
 
   if (inst.zone === "battlefield") {
+    if (group) {
+      items.push({
+        label: `${targets.length} cards selected`,
+        disabled: true,
+      });
+    }
     items.push(
       {
-        label: inst.tapped ? "Untap" : "Tap",
+        label: inst.tapped ? (group ? "Untap selected" : "Untap") : group ? "Tap selected" : "Tap",
         icon: "⤵",
-        onClick: () => g.toggleTap(instanceId),
+        onClick: () =>
+          group ? g.toggleTapMany(targets, instanceId) : g.toggleTap(instanceId),
       },
-      { label: "Move to", icon: "→", children: moveToSubmenu(instanceId, "battlefield", isCommander) },
-      { label: "Card actions", icon: "🂠", children: cardActionsSubmenu(instanceId) },
+      {
+        label: group ? `Move ${targets.length} to` : "Move to",
+        icon: "→",
+        children: moveToSubmenu(targets, "battlefield", isCommander),
+      },
+      ...(group
+        ? []
+        : [{ label: "Card actions", icon: "🂠", children: cardActionsSubmenu(instanceId) }]),
       { label: "", separator: true },
       {
-        label: "+1/+1 counter",
+        label: group ? "+1/+1 counter (each)" : "+1/+1 counter",
         icon: "✛",
-        onClick: () => g.addCounterOnCard(instanceId, "+1/+1", 1),
+        onClick: () => {
+          for (const id of targets) g.addCounterOnCard(id, "+1/+1", 1);
+        },
       },
-      { label: "Add counters", icon: "✚", children: addCountersSubmenu(instanceId) },
-      ...counterRows(instanceId),
+      ...(group ? [] : [{ label: "Add counters", icon: "✚", children: addCountersSubmenu(instanceId) }]),
+      ...(group ? [] : counterRows(instanceId)),
       { label: "", separator: true },
-      { label: "Create token copy", icon: "⧉", onClick: () => g.cloneInstance(instanceId) },
+      ...(group
+        ? []
+        : [{ label: "Create token copy", icon: "⧉", onClick: () => g.cloneInstance(instanceId) }]),
       {
-        label: inst.isToken ? "Remove token" : "Delete card from game",
+        label: group
+          ? `Delete ${targets.length} from game`
+          : inst.isToken
+            ? "Remove token"
+            : "Delete card from game",
         icon: "🗑",
         danger: true,
-        onClick: () => g.removeInstance(instanceId),
+        onClick: () => {
+          for (const id of targets) g.removeInstance(id);
+          if (group) useUiStore.getState().clearSelected();
+        },
       },
     );
   } else if (inst.zone === "hand") {
@@ -194,7 +249,7 @@ export function buildCardMenu(instanceId: string): MenuItem[] {
         },
       },
       { label: "", separator: true },
-      { label: "Move to", icon: "→", children: moveToSubmenu(instanceId, "hand", isCommander) },
+      { label: "Move to", icon: "→", children: moveToSubmenu([instanceId], "hand", isCommander) },
     );
   } else if (inst.zone === "command") {
     const tax = (g.players[inst.ownerId]?.commanderTax[inst.oracleId] ?? 0) * 2;
@@ -204,14 +259,14 @@ export function buildCardMenu(instanceId: string): MenuItem[] {
         icon: "♛",
         onClick: () => g.moveCard(instanceId, "battlefield"),
       },
-      { label: "Move to", icon: "→", children: moveToSubmenu(instanceId, "command", isCommander) },
+      { label: "Move to", icon: "→", children: moveToSubmenu([instanceId], "command", isCommander) },
     );
   } else {
     // graveyard / exile / library cards (from browse modals or pile tops)
     items.push({
       label: "Move to",
       icon: "→",
-      children: moveToSubmenu(instanceId, inst.zone, isCommander),
+      children: moveToSubmenu([instanceId], inst.zone, isCommander),
     });
   }
 

@@ -2,8 +2,10 @@
 
 import { useRef, useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
+import type { ScryCard } from "@/types";
 import { PLAYER_ID, hasSummoningSickness, useGameStore } from "@/lib/game/store";
 import { justFinishedDrag, useUiStore } from "@/lib/game/uiStore";
+import { TOKEN_DND_TYPE } from "@/lib/game/tokens";
 import { BattlefieldCard } from "./BattlefieldCard";
 import { buildBattlefieldMenu } from "./cardMenu";
 
@@ -33,6 +35,8 @@ export function Battlefield() {
   const selected = useUiStore((s) => s.selected);
   const setSelected = useUiStore((s) => s.setSelected);
   const openMenu = useUiStore((s) => s.openMenu);
+  const createTokenFromCard = useGameStore((s) => s.createTokenFromCard);
+  const cardSize = useGameStore((s) => s.prefs.cardSize);
 
   const { setNodeRef, isOver } = useDroppable({ id: "battlefield" });
   const surfaceRef = useRef<HTMLDivElement | null>(null);
@@ -106,6 +110,33 @@ export function Battlefield() {
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes(TOKEN_DND_TYPE)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+      }}
+      onDrop={(e) => {
+        if (!e.dataTransfer.types.includes(TOKEN_DND_TYPE)) return;
+        e.preventDefault();
+        const raw = e.dataTransfer.getData(TOKEN_DND_TYPE);
+        if (!raw) return;
+        let card: ScryCard;
+        try {
+          card = JSON.parse(raw) as ScryCard;
+        } catch {
+          return;
+        }
+        const rect = surfaceRef.current?.getBoundingClientRect();
+        const w = cardSize;
+        const h = Math.round(cardSize * 1.4);
+        const position = rect
+          ? {
+              x: Math.max(0, Math.min(e.clientX - rect.left - w / 2, rect.width - w)),
+              y: Math.max(0, Math.min(e.clientY - rect.top - h / 2, rect.height - h)),
+            }
+          : undefined;
+        createTokenFromCard(card, 1, PLAYER_ID, position);
+      }}
       onContextMenu={(e) => {
         if ((e.target as HTMLElement).closest("[data-bf-card]")) return;
         e.preventDefault();

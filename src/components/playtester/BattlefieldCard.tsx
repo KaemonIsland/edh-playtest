@@ -1,11 +1,12 @@
 "use client";
 
-import { memo, useRef } from "react";
+import { memo, useRef, useState } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { motion } from "framer-motion";
 import type { CardInstance, ScryCard } from "@/types";
 import { useGameStore } from "@/lib/game/store";
 import { justFinishedDrag, useUiStore } from "@/lib/game/uiStore";
+import { COUNTER_DND_TYPE } from "@/lib/game/counters";
 import { CardImage } from "@/components/cards/CardImage";
 import { buildCardMenu } from "./cardMenu";
 
@@ -25,15 +26,22 @@ export const BattlefieldCard = memo(function BattlefieldCard({
   const toggleTap = useGameStore((s) => s.toggleTap);
   const toggleTapMany = useGameStore((s) => s.toggleTapMany);
   const attachAction = useGameStore((s) => s.attach);
+  const addCounterOnCard = useGameStore((s) => s.addCounterOnCard);
   const instances = useGameStore((s) => s.instances);
   const cards = useGameStore((s) => s.cards);
   const cardSize = useGameStore((s) => s.prefs.cardSize);
   const openMenu = useUiStore((s) => s.openMenu);
   const setPreview = useUiStore((s) => s.setPreview);
+  const setBoardHover = useUiStore((s) => s.setBoardHover);
   const attachSource = useUiStore((s) => s.attachSource);
   const setAttachSource = useUiStore((s) => s.setAttachSource);
   const selected = useUiStore((s) => s.selected.includes(inst.instanceId));
   const longPress = useRef<number | null>(null);
+  // True while a Dice Bag counter is dragged over this card (native DnD).
+  const [counterOver, setCounterOver] = useState(false);
+
+  const counterDrag = (e: React.DragEvent) =>
+    e.dataTransfer.types.includes(COUNTER_DND_TYPE);
 
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: inst.instanceId,
@@ -60,6 +68,20 @@ export const BattlefieldCard = memo(function BattlefieldCard({
       data-instance-id={inst.instanceId}
       className="absolute touch-none"
       style={{ left: x, top: y, zIndex: isDragging ? 50 : inst.tapped ? 1 : 2, opacity: isDragging ? 0.3 : 1 }}
+      onDragOver={(e) => {
+        if (!counterDrag(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+        if (!counterOver) setCounterOver(true);
+      }}
+      onDragLeave={() => counterOver && setCounterOver(false)}
+      onDrop={(e) => {
+        if (!counterDrag(e)) return;
+        e.preventDefault();
+        const name = e.dataTransfer.getData(COUNTER_DND_TYPE);
+        setCounterOver(false);
+        if (name) addCounterOnCard(inst.instanceId, name, 1);
+      }}
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -97,8 +119,18 @@ export const BattlefieldCard = memo(function BattlefieldCard({
           toggleTap(inst.instanceId);
         }
       }}
-      onMouseEnter={() => setPreview({ card, tokenSpec: inst.tokenSpec, flipped: inst.flipped })}
-      onMouseLeave={() => setPreview(null)}
+      onMouseEnter={(e) => {
+        setPreview({ card, tokenSpec: inst.tokenSpec, flipped: inst.flipped });
+        // Only fade the hand for cards in the lower quarter of the board, where
+        // the fan can actually cover them.
+        const sr = document.getElementById("battlefield-surface")?.getBoundingClientRect();
+        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        setBoardHover(!!sr && r.top + r.height / 2 > sr.top + sr.height * 0.75);
+      }}
+      onMouseLeave={() => {
+        setPreview(null);
+        setBoardHover(false);
+      }}
     >
       {/* Attachments fan out beneath the host card and move with it. */}
       {inst.attachments.map((id, i) => {
@@ -135,7 +167,13 @@ export const BattlefieldCard = memo(function BattlefieldCard({
         animate={{ rotate: inst.tapped ? 90 : 0 }}
         transition={{ type: "spring", stiffness: 420, damping: 32 }}
         className={`relative rounded-[7%] ${
-          isAttachTarget ? "ring-2 ring-emerald-400" : selected ? "ring-2 ring-sky-400" : ""
+          counterOver
+            ? "ring-2 ring-fuchsia-400"
+            : isAttachTarget
+              ? "ring-2 ring-emerald-400"
+              : selected
+                ? "ring-2 ring-sky-400"
+                : ""
         } ${sick ? "ring-1 ring-amber-500/70" : ""}`}
         style={{ width: w, height: h }}
       >

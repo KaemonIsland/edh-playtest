@@ -1,24 +1,48 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import type { ScryCard } from "@/types";
-import { advancedSearchCards, byNewest, getCardDbStatus, type SearchFilters } from "@/lib/cards/carddb";
-import { getRepo } from "@/lib/repo";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { Deck, ScryCard } from "@/types";
+import {
+  advancedSearchCards,
+  byNewest,
+  fetchAllSets,
+  fetchPrintingsByOracleIds,
+  getCardDbStatus,
+  type SearchFilters,
+  type SetInfo,
+} from "@/lib/cards/carddb";
+import { TYPE_OPTIONS } from "@/lib/cards/cardTypes";
+import { collectionEntryId, getRepo, type CardFinish } from "@/lib/repo";
+import { adjustCollection } from "@/lib/cards/collection";
+import { loadPriceIndex, usePriceStore } from "@/lib/cards/pricing";
 import {
   emptyFilters,
   filtersActive,
   matchesFilters,
   type CardFilters,
 } from "@/components/collection/FilterSidebar";
-import { CardImage } from "@/components/cards/CardImage";
-import { ManaCost } from "@/components/cards/ManaCost";
+import { PrintingTile } from "@/components/collection/PrintingTile";
+import { TokenMultiSelect, type TokenOption } from "@/components/collection/TokenMultiSelect";
+
+/** Above this many distinct cards, skip expanding to every printing (too many). */
+const EXPAND_CARD_CAP = 60;
+/** Results shown per page; "Load more" reveals the next batch. */
+const RESULTS_PAGE = 48;
 
 const COLORS = ["W", "U", "B", "R", "G", "C"] as const;
 const RARITIES = ["common", "uncommon", "rare", "mythic"] as const;
 const OPS = ["=", ">=", "<="] as const;
 
-/** Map the shared filter shape (+ keyword/set) to the search engine filters. */
-function toSearchFilters(f: CardFilters, keyword: string, set: string): SearchFilters {
+const TYPE_TOKEN_OPTIONS: TokenOption[] = TYPE_OPTIONS.map((t) => ({ value: t }));
+
+interface ExtraFilters {
+  keyword: string;
+  sets: string[];
+  artist: string;
+}
+
+/** Map the shared filter shape (+ keyword/sets/artist) to the search engine filters. */
+function toSearchFilters(f: CardFilters, extra: ExtraFilters): SearchFilters {
   return {
     name: f.name.trim() || undefined,
     type: f.types.join(" ") || undefined,
@@ -32,8 +56,9 @@ function toSearchFilters(f: CardFilters, keyword: string, set: string): SearchFi
     toughness: f.toughness.trim() ? parseFloat(f.toughness) : undefined,
     toughnessOp: f.toughnessOp,
     rarities: f.rarities.length ? f.rarities : undefined,
-    keyword: keyword.trim() || undefined,
-    set: set.trim() || undefined,
+    keyword: extra.keyword.trim() || undefined,
+    sets: extra.sets.length ? extra.sets : undefined,
+    artist: extra.artist.trim() || undefined,
     commander: f.commanderOnly || undefined,
   };
 }
@@ -43,19 +68,94 @@ export function CardSearchModal({
   initialQuery,
   onOpenCard,
   onClose,
+  deck,
+  update,
 }: {
   initialQuery: string;
   /** Clicking a card opens its detail modal (where it can be added). */
   onOpenCard: (card: ScryCard) => void;
   onClose: () => void;
+  /** Deck-add mode: when provided, result tiles add the printing straight to
+   * this deck (via `update`) instead of to the collection. */
+  deck?: Deck;
+  update?: (fn: (d: Deck) => void) => void;
 }) {
+  const deckMode = !!deck && !!update;
   const [filters, setFilters] = useState<CardFilters>(() => ({ ...emptyFilters(), name: initialQuery }));
   const [keyword, setKeyword] = useState("");
-  const [set, setSet] = useState("");
+  const [sets, setSets] = useState<string[]>([]);
+  const [artist, setArtist] = useState("");
   const [advanced, setAdvanced] = useState(false);
   const [ownedOnly, setOwnedOnly] = useState(false);
   const [results, setResults] = useState<ScryCard[] | null>(null);
+  const [shownCount, setShownCount] = useState(RESULTS_PAGE);
   const [searching, setSearching] = useState(false);
+  const [owned, setOwned] = useState<Map<string, number>>(new Map());
+  const [setList, setSetList] = useState<SetInfo[]>([]);
+  // Re-render tiles (and their prices) when the price index loads.
+  const priceVersion = usePriceStore((s) => s.version);
+
+  useEffect(() => {
+    void loadPriceIndex();
+    void fetchAllSets().then(setSetList);
+  }, []);
+
+  const setOptions: TokenOption[] = useMemo(
+    () =>
+      setList.map((s) => ({
+        value: s.code,
+        label: `${s.name} (${s.code.toUpperCase()})`,
+        hint: s.released_at?.slice(0, 4),
+      })),
+    [setList],
+  );
+
+  const refreshOwned = useCallback(async () => {
+    const list = await getRepo().listCollection();
+    setOwned(new Map(list.map((c) => [c.id, c.quantity])));
+  }, []);
+  useEffect(() => {
+    void refreshOwned();
+  }, [refreshOwned]);
+
+  const ownedQty = (printingId: string, finish: CardFinish) =>
+    owned.get(collectionEntryId(printingId, finish)) ?? 0;
+
+  /** Add/remove a specific printing+finish, updating the owned counts in place. */
+  const adjust = async (card: ScryCard, finish: CardFinish, delta: number) => {
+    const next = await adjustCollection(card, finish, delta);
+    setOwned((prev) => {
+      const m = new Map(prev);
+      m.set(collectionEntryId(card.id, finish), next);
+      return m;
+    });
+  };
+
+  // Deck-add mode: copies already in the deck, keyed by oracle id.
+  const deckQtyByOracle = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const e of deck?.entries ?? []) m.set(e.card.oracle_id, e.quantity);
+    return m;
+  }, [deck?.entries]);
+
+  /** Add/remove this card in the deck (mirrors the card detail quantity logic). */
+  const adjustDeck = (card: ScryCard, delta: number) => {
+    update?.((d) => {
+      const e = d.entries.find((x) => x.card.oracle_id === card.oracle_id);
+      if (e) {
+        const next = e.quantity + delta;
+        if (next <= 0) {
+          d.entries = d.entries.filter((x) => x.card.oracle_id !== card.oracle_id);
+          d.commanders = d.entries.filter((x) => x.isCommander).map((x) => x.card);
+        } else {
+          e.quantity = next;
+        }
+      } else if (delta > 0) {
+        // New entry adopts the clicked printing.
+        d.entries.push({ card, quantity: delta, isCommander: false, categories: [] });
+      }
+    });
+  };
 
   const setF = (patch: Partial<CardFilters>) => setFilters((p) => ({ ...p, ...patch }));
   const toggle = (key: "types" | "colors" | "rarities", value: string) =>
@@ -66,6 +166,7 @@ export function CardSearchModal({
 
   const run = useCallback(async () => {
     setSearching(true);
+    setShownCount(RESULTS_PAGE);
     try {
       if (ownedOnly) {
         // Browse the collection itself (works without the card DB synced).
@@ -73,34 +174,47 @@ export function CardSearchModal({
         const byOracle = new Map<string, ScryCard>();
         for (const c of collection) if (c.quantity > 0) byOracle.set(c.oracleId, c.card);
         const kw = keyword.trim().toLowerCase();
-        const setQ = set.trim().toLowerCase();
+        const setSet = new Set(sets.map((s) => s.toLowerCase()));
+        // Note: artist is a printing-level credit and isn't stored on collection
+        // (oracle) cards, so it's ignored in owned-only mode.
         const cards = [...byOracle.values()]
           .filter((c) => matchesFilters(c, filters))
           .filter((c) => !kw || (c.keywords ?? []).some((k) => k.toLowerCase() === kw))
-          .filter((c) => !setQ || (c.set ?? "").toLowerCase() === setQ)
+          .filter((c) => !setSet.size || setSet.has((c.set ?? "").toLowerCase()))
           .sort(byNewest);
         setResults(cards);
         return;
       }
-      setResults(await advancedSearchCards(toSearchFilters(filters, keyword, set)));
+      const base = await advancedSearchCards(toSearchFilters(filters, { keyword, sets, artist }));
+      // Expand to every printing (all variants) for narrow result sets, so the
+      // exact one can be added without drilling into each card. Grouped by the
+      // card's search rank, newest printing first. Falls back to the oracle-level
+      // results when broad, or when the local printings DB isn't synced.
+      if (base.length > 0 && base.length <= EXPAND_CARD_CAP) {
+        const prints = await fetchPrintingsByOracleIds(base.map((c) => c.oracle_id));
+        if (prints.length > 0) {
+          const order = new Map(base.map((c, i) => [c.oracle_id, i]));
+          prints.sort((a, b) => {
+            const oa = order.get(a.oracle_id) ?? 1e9;
+            const ob = order.get(b.oracle_id) ?? 1e9;
+            if (oa !== ob) return oa - ob;
+            return (b.released_at ?? "").localeCompare(a.released_at ?? "");
+          });
+          setResults(prints);
+          return;
+        }
+      }
+      setResults(base);
     } finally {
       setSearching(false);
     }
-  }, [filters, keyword, set, ownedOnly]);
+  }, [filters, keyword, sets, artist, ownedOnly]);
 
   // Run the initial query immediately.
   useEffect(() => {
     if (initialQuery.trim()) void run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Re-run when the owned-only toggle changes (after the first search).
-  const [touched, setTouched] = useState(false);
-  useEffect(() => {
-    if (touched) void run();
-    else setTouched(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ownedOnly]);
 
   const NumberRow = ({
     label,
@@ -156,6 +270,7 @@ export function CardSearchModal({
             autoFocus
             value={filters.name}
             onChange={(e) => setF({ name: e.target.value })}
+            onFocus={(e) => e.currentTarget.select()}
             onKeyDown={(e) => e.key === "Enter" && void run()}
             placeholder="Card name…"
             className="w-full rounded-md border border-stone-700 bg-stone-900 px-3 py-2 text-sm outline-none focus:border-emerald-600"
@@ -191,12 +306,13 @@ export function CardSearchModal({
           >
             {advanced ? "▾" : "▸"} Advanced options
           </button>
-          {filtersActive(filters) || keyword || set ? (
+          {filtersActive(filters) || keyword || sets.length || artist ? (
             <button
               onClick={() => {
                 setFilters(emptyFilters());
                 setKeyword("");
-                setSet("");
+                setSets([]);
+                setArtist("");
               }}
               className="text-[11px] text-stone-500 hover:text-rose-400"
             >
@@ -224,33 +340,42 @@ export function CardSearchModal({
                   className="w-full rounded-md border border-stone-700 bg-stone-900 px-3 py-1.5 text-xs outline-none focus:border-emerald-600"
                 />
                 <input
-                  value={set}
-                  onChange={(e) => setSet(e.target.value)}
+                  value={artist}
+                  onChange={(e) => setArtist(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && void run()}
-                  placeholder="Set code"
-                  className="w-28 rounded-md border border-stone-700 bg-stone-900 px-3 py-1.5 text-xs outline-none focus:border-emerald-600"
+                  placeholder="Artist"
+                  className="w-40 rounded-md border border-stone-700 bg-stone-900 px-3 py-1.5 text-xs outline-none focus:border-emerald-600"
                 />
               </div>
             </div>
 
-            {/* Types */}
-            <div className="flex flex-wrap items-center gap-1">
-              <span className="mr-1 text-[10px] font-bold tracking-wide text-stone-500 uppercase">Type</span>
-              {["Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Planeswalker", "Battle", "Land"].map(
-                (t) => (
-                  <button
-                    key={t}
-                    onClick={() => toggle("types", t)}
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold transition ${
-                      filters.types.includes(t)
-                        ? "bg-emerald-700 text-white"
-                        : "bg-stone-900 text-stone-400 hover:text-stone-200"
-                    }`}
-                  >
-                    {t}
-                  </button>
-                ),
-              )}
+            {/* Types — pick card types or subtypes (Aura, Adventure, Elf…). */}
+            <div>
+              <div className="mb-1 text-[10px] font-bold tracking-wide text-stone-500 uppercase">
+                Type / subtype
+              </div>
+              <TokenMultiSelect
+                options={TYPE_TOKEN_OPTIONS}
+                selected={filters.types}
+                onChange={(types) => setF({ types })}
+                placeholder="Type to filter — e.g. Aura, Adventure, Elf…"
+                allowCustom
+                onSubmit={() => void run()}
+              />
+            </div>
+
+            {/* Sets — filter-as-you-type multi-select. */}
+            <div>
+              <div className="mb-1 text-[10px] font-bold tracking-wide text-stone-500 uppercase">
+                Sets
+              </div>
+              <TokenMultiSelect
+                options={setOptions}
+                selected={sets}
+                onChange={setSets}
+                placeholder={setOptions.length ? "Type a set name or code…" : "Loading sets…"}
+                onSubmit={() => void run()}
+              />
             </div>
 
             {/* Colors + mode */}
@@ -321,7 +446,8 @@ export function CardSearchModal({
 
             <p className="text-[10px] text-stone-600">
               Rarity, power, toughness, and keyword filters use the local card database — re-sync it
-              on “My decks” to populate those fields. Without a sync, search falls back to Scryfall.
+              on “My decks” to populate those fields. Artist search and unsynced searches run via
+              Scryfall.
             </p>
           </div>
         )}
@@ -339,28 +465,40 @@ export function CardSearchModal({
           ) : (
             <>
               <p className="mb-2 text-[11px] text-stone-500">
-                {results.length} result{results.length === 1 ? "" : "s"} — click a card for details
-                and to add it.
+                {results.length} result{results.length === 1 ? "" : "s"}
+                {shownCount < results.length ? ` (showing ${shownCount})` : ""} —{" "}
+                {deckMode
+                  ? "use “+ Add to deck”, or click a card for full details."
+                  : "use −/+ to add a printing, or click a card for full details."}
               </p>
-              <div className="grid max-h-[55vh] grid-cols-3 gap-3 overflow-y-auto sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
-                {results.map((card) => (
-                  <button
-                    key={card.oracle_id}
-                    onClick={() => onOpenCard(card)}
-                    className="group relative text-left"
-                    style={{ contentVisibility: "auto", containIntrinsicSize: "180px" }}
-                    title={`View ${card.name}`}
-                  >
-                    <CardImage
-                      card={card}
-                      className="aspect-[5/7] w-full transition group-hover:ring-2 group-hover:ring-sky-500"
-                    />
-                    <div className="mt-1 flex items-center gap-1">
-                      <span className="min-w-0 flex-1 truncate text-[10px] text-stone-400">{card.name}</span>
-                      <ManaCost cost={card.mana_cost} size={9} />
-                    </div>
-                  </button>
+              <div
+                data-pv={priceVersion}
+                className="grid max-h-[60vh] grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-3 lg:grid-cols-4"
+              >
+                {results.slice(0, shownCount).map((card) => (
+                  <PrintingTile
+                    key={card.id}
+                    card={card}
+                    ownedNonfoil={ownedQty(card.id, "nonfoil")}
+                    ownedFoil={ownedQty(card.id, "foil")}
+                    showName
+                    onOpen={() => onOpenCard(card)}
+                    {...(deckMode
+                      ? {
+                          deckQty: deckQtyByOracle.get(card.oracle_id) ?? 0,
+                          onAdjustDeck: (d: number) => adjustDeck(card, d),
+                        }
+                      : { onAdjust: (finish: CardFinish, d: number) => adjust(card, finish, d) })}
+                  />
                 ))}
+                {shownCount < results.length && (
+                  <button
+                    onClick={() => setShownCount((n) => n + RESULTS_PAGE)}
+                    className="col-span-full rounded-md border border-stone-700 bg-stone-900 py-2.5 text-xs font-semibold text-stone-300 hover:bg-stone-800"
+                  >
+                    Load more ({results.length - shownCount} more)
+                  </button>
+                )}
               </div>
             </>
           )}
