@@ -1,5 +1,7 @@
 "use client";
 
+import { CARD_GRID } from "@/components/ui/CardSizeSelect";
+import { Seg } from "@/components/ui/Seg";
 import { Archive, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -175,7 +177,7 @@ export default function CollectionPage() {
   return (
     <div className="flex min-h-dvh flex-col bg-[#08080a] text-stone-200">
       {/* Header */}
-      <div className="mx-auto w-full max-w-6xl px-4 pt-6">
+      <div className="w-full px-6 pt-6">
         <MigrationBanner />
 
         {unresolvedCount > 0 && (
@@ -193,24 +195,18 @@ export default function CollectionPage() {
         )}
 
         {/* Collection / Wishlist toggle */}
-        <div className="mb-4 inline-flex gap-0.5 rounded-lg bg-stone-900 p-0.5">
-          {(
-            [
-              ["collection", "Collection"],
-              ["wishlist", `Wishlist${wishlist?.length ? ` (${wishlist.length})` : ""}`],
-            ] as const
-          ).map(([m, label]) => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
-              className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
-                mode === m ? "bg-stone-700 text-white" : "text-stone-400 hover:text-stone-200"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <Seg
+          className="mb-4 inline-flex"
+          value={mode}
+          onChange={setMode}
+          options={[
+            { value: "collection", label: "Collection" },
+            {
+              value: "wishlist",
+              label: `Wishlist${wishlist?.length ? ` (${wishlist.length})` : ""}`,
+            },
+          ]}
+        />
 
         {mode === "wishlist" ? (
           <div className="mb-4">
@@ -284,7 +280,7 @@ export default function CollectionPage() {
 
       {/* Wishlist body */}
       {mode === "wishlist" && (
-        <div className="mx-auto flex w-full max-w-6xl flex-1 gap-3 px-4 pb-10">
+        <div className="flex w-full flex-1 gap-3 px-6 pb-10">
           {showFilters && (
             <FilterSidebar filters={filters} onChange={setFilters} sort={sort} onSort={setSort} />
           )}
@@ -307,7 +303,7 @@ export default function CollectionPage() {
                   : "No wishlist cards match these filters."}
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+              <div className={CARD_GRID}>
                 {wishlistVisible.map((w) => (
                   <CardGridTile
                     key={w.oracleId}
@@ -326,7 +322,7 @@ export default function CollectionPage() {
 
       {/* Collection body */}
       {mode === "collection" && (
-      <div className="mx-auto flex w-full max-w-6xl flex-1 gap-3 px-4 pb-10">
+      <div className="flex w-full flex-1 gap-3 px-6 pb-10">
         {cards === null ? (
           <p className="text-sm text-stone-600">Loading…</p>
         ) : (cards.length === 0 ? (
@@ -391,7 +387,7 @@ export default function CollectionPage() {
                   No cards match these filters.
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+                <div className={CARD_GRID}>
                   {shown.map((c) => (
                     <CardGridTile
                       key={c.id}

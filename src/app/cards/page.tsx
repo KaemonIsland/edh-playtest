@@ -1,5 +1,6 @@
 "use client";
 
+import { CARD_GRID } from "@/components/ui/CardSizeSelect";
 import { Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ScryCard } from "@/types";
@@ -174,7 +175,7 @@ export default function AllCardsPage() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-[#08080a] text-stone-200">
-      <div className="mx-auto w-full max-w-6xl px-4 pt-6">
+      <div className="w-full px-6 pt-6">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div className="flex items-center gap-3">
             {active && (
@@ -231,7 +232,7 @@ export default function AllCardsPage() {
         </div>
       </div>
 
-      <div className="mx-auto flex w-full max-w-6xl flex-1 gap-3 px-4 pb-10">
+      <div className="flex w-full flex-1 gap-3 px-6 pb-10">
         {!active ? (
           // Set browser
           <div className="w-full">
@@ -279,7 +280,7 @@ export default function AllCardsPage() {
                   No cards match these filters.
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                <div className={CARD_GRID}>
                   {shownCards.map((c) => (
                     <PrintingTile
                       key={c.id}

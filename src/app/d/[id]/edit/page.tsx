@@ -1,6 +1,6 @@
 "use client";
 
-import { Backpack, Layers, List, Play, Search, X } from "lucide-react";
+import { Backpack, Layers, Lightbulb, List, Play, Search, X } from "lucide-react";
 import {
   Fragment,
   use,
@@ -52,6 +52,11 @@ import { CardSearchModal } from "@/components/builder/CardSearchModal";
 import { CardDetailModal } from "@/components/builder/CardDetailModal";
 import { DeckDock } from "@/components/builder/DeckDock";
 import { CardRow, DropHint } from "@/components/builder/CardRows";
+import { SuggestionsModal } from "@/components/builder/SuggestionsModal";
+import { ModalShell } from "@/components/ui/ModalShell";
+import { useCardMinPx } from "@/components/ui/CardSizeSelect";
+import { Seg } from "@/components/ui/Seg";
+import { CATEGORY_OTAG } from "@/lib/cards/otags";
 
 type ViewMode = "stacks" | "text";
 const VIEW_KEY = "edh-playtest:builder-view";
@@ -279,6 +284,8 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
   const [results, setResults] = useState<ScryCard[]>([]);
   const [highlight, setHighlight] = useState(-1);
   const [searchModal, setSearchModal] = useState<string | null>(null);
+  const [suggest, setSuggest] = useState<{ otag?: string; category?: string } | null>(null);
+  const [browseOpen, setBrowseOpen] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveTitle, setSaveTitle] = useState("");
   const [saving, setSaving] = useState(false);
@@ -291,21 +298,27 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
   const resultsRef = useRef<ScryCard[]>([]);
   const omniboxRef = useRef<HTMLInputElement>(null);
 
-  // Masonry column count, derived from the deck area's width (≈240px/column).
+  // Masonry column count, derived from the deck area's width. Column width
+  // follows the global card size (header dropdown), so bigger cards = fewer,
+  // wider columns. The playtest table has its own sizing and is untouched.
+  const cardMinPx = useCardMinPx();
   const [deckCols, setDeckCols] = useState(4);
   const colObserver = useRef<ResizeObserver | null>(null);
-  const measureDeckCols = useCallback((el: HTMLElement | null) => {
-    colObserver.current?.disconnect();
-    colObserver.current = null;
-    if (!el) return;
-    const GAP = 12; // gap-3
-    const MIN_COL = 240;
-    const apply = () =>
-      setDeckCols(Math.max(1, Math.floor((el.clientWidth + GAP) / (MIN_COL + GAP))));
-    apply();
-    colObserver.current = new ResizeObserver(apply);
-    colObserver.current.observe(el);
-  }, []);
+  const measureDeckCols = useCallback(
+    (el: HTMLElement | null) => {
+      colObserver.current?.disconnect();
+      colObserver.current = null;
+      if (!el) return;
+      const GAP = 12; // gap-3
+      const MIN_COL = cardMinPx + 16; // card + column padding
+      const apply = () =>
+        setDeckCols(Math.max(1, Math.floor((el.clientWidth + GAP) / (MIN_COL + GAP))));
+      apply();
+      colObserver.current = new ResizeObserver(apply);
+      colObserver.current.observe(el);
+    },
+    [cardMinPx],
+  );
 
   useEffect(() => {
     void ownedOracleIds().then(setOwnedIds);
@@ -868,26 +881,23 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
         {/* ── Tier 2: workbench toolbar ──────────────────────────────────── */}
         <div className="flex flex-wrap items-center gap-2 border-b border-stone-800 bg-stone-950/80 px-3 py-1.5">
           {/* Search scope */}
-          <div
-            className="flex gap-0.5 rounded-lg bg-stone-900 p-0.5"
-            title="Collection: build from what you own first. All cards: search everything."
-          >
-            {(["collection", "all"] as const).map((s) => (
-              <button
-                key={s}
-                onClick={() => changeScope(s)}
-                className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition ${
-                  scope === s
-                    ? s === "collection"
-                      ? "bg-emerald-800 text-white"
-                      : "bg-stone-700 text-white"
-                    : "text-stone-500 hover:text-stone-300"
-                }`}
-              >
-                {s === "collection" ? <><Backpack size={12} className="inline align-[-2px]" /> Collection</> : "All cards"}
-              </button>
-            ))}
-          </div>
+          <Seg
+            value={scope}
+            onChange={changeScope}
+            options={[
+              {
+                value: "collection",
+                label: (
+                  <>
+                    <Backpack size={12} className="inline align-[-2px]" /> Collection
+                  </>
+                ),
+                accent: "emerald",
+                title: "Build from what you own first",
+              },
+              { value: "all", label: "All cards", title: "Search everything" },
+            ]}
+          />
 
           {/* Omnibox + dropdown */}
           <div className="relative min-w-64 flex-1">
@@ -946,47 +956,64 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
           >
             <Search size={13} className="inline align-[-2px]" /> Advanced
           </button>
+          <button
+            onClick={() => setSuggest({})}
+            className="rounded-md border border-amber-800/50 bg-amber-950/20 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-900/30"
+            title="Discover cards via oracle tags or EDHREC synergy"
+          >
+            <Lightbulb size={13} className="inline align-[-2px]" /> Suggestions
+          </button>
+          <button
+            onClick={() => setBrowseOpen(true)}
+            className="rounded-md border border-emerald-800/50 bg-emerald-950/20 px-3 py-1.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-900/30"
+            title="Everything you own that fits the commander's color identity"
+          >
+            <Backpack size={13} className="inline align-[-2px]" /> Browse collection
+          </button>
 
           {/* Group lens */}
           <span className="ml-1 font-mono text-[9px] tracking-widest text-stone-600 uppercase">
             Group
           </span>
-          <div className="flex gap-0.5 rounded-lg bg-stone-900 p-0.5">
-            {(Object.keys(LENS_LABEL) as GroupLens[]).map((l) => (
-              <button
-                key={l}
-                onClick={() => setLensPersist(l)}
-                className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${
-                  lens === l ? "bg-stone-700 text-white" : "text-stone-500 hover:text-stone-300"
-                }`}
-                title={
-                  l === "category-all"
-                    ? "Show cards in every category they hold — ghosted outside their premier column"
-                    : undefined
-                }
-              >
-                {LENS_LABEL[l]}
-              </button>
-            ))}
-          </div>
+          <Seg
+            value={lens}
+            onChange={setLensPersist}
+            options={(Object.keys(LENS_LABEL) as GroupLens[]).map((l) => ({
+              value: l,
+              label: LENS_LABEL[l],
+              title:
+                l === "category-all"
+                  ? "Show cards in every category they hold — ghosted outside their premier column"
+                  : undefined,
+            }))}
+          />
 
           {/* View toggle */}
           <span className="font-mono text-[9px] tracking-widest text-stone-600 uppercase">
             View
           </span>
-          <div className="flex gap-0.5 rounded-lg bg-stone-900 p-0.5">
-            {(["stacks", "text"] as const).map((mode) => (
-              <button
-                key={mode}
-                onClick={() => setView(mode)}
-                className={`rounded-md px-2.5 py-1 text-[11px] font-semibold capitalize transition ${
-                  viewMode === mode ? "bg-stone-700 text-white" : "text-stone-500 hover:text-stone-300"
-                }`}
-              >
-                {mode === "stacks" ? <><Layers size={12} className="inline align-[-2px]" /> Stacks</> : <><List size={12} className="inline align-[-2px]" /> Text</>}
-              </button>
-            ))}
-          </div>
+          <Seg
+            value={viewMode}
+            onChange={setView}
+            options={[
+              {
+                value: "stacks",
+                label: (
+                  <>
+                    <Layers size={12} className="inline align-[-2px]" /> Stacks
+                  </>
+                ),
+              },
+              {
+                value: "text",
+                label: (
+                  <>
+                    <List size={12} className="inline align-[-2px]" /> Text
+                  </>
+                ),
+              },
+            ]}
+          />
 
           {selection.size > 0 && (
             <span className="rounded-full border border-emerald-800 bg-emerald-950/40 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
@@ -1005,7 +1032,7 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
             className="flex flex-1 items-start gap-3 overflow-y-auto p-3"
           >
             {deckBuckets.map((bucket, i) => (
-              <div key={i} className="flex min-w-0 max-w-[280px] flex-1 flex-col gap-3">
+              <div key={i} className="flex min-w-0 flex-1 flex-col gap-3" style={{ maxWidth: cardMinPx + 90 }}>
                 {bucket.map((item) => (
                   <Fragment key={item.key}>{item.node}</Fragment>
                 ))}
@@ -1027,6 +1054,12 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
               setDraft(restored);
               setDockNote(note);
             }}
+            onSuggest={(category) =>
+              setSuggest({
+                otag: CATEGORY_OTAG[category.toLowerCase()],
+                category: category.toLowerCase() === "lands" ? undefined : category,
+              })
+            }
           />
         </div>
       </div>
@@ -1085,17 +1118,37 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
         />
       )}
 
+      {/* Browse collection — everything you own in the commander's identity */}
+      {browseOpen && (
+        <CardSearchModal
+          initialQuery=""
+          initialFilters={{ colors: draft.colorIdentity, colorMode: "identity" }}
+          initialScope="collection"
+          autoRun
+          onOpenCard={(card) => setDetailCard(card)}
+          deck={draft}
+          update={update}
+          onScopeChange={setScope}
+          onClose={() => setBrowseOpen(false)}
+        />
+      )}
+
+      {/* Suggestions — otag discovery / EDHREC synergy */}
+      {suggest !== null && (
+        <SuggestionsModal
+          deck={draft}
+          update={update}
+          initialOtag={suggest.otag}
+          initialCategory={suggest.category}
+          onOpenCard={(c) => void openCard(c)}
+          onClose={() => setSuggest(null)}
+        />
+      )}
+
       {/* Save + changelog modal */}
       {saveOpen && (
-        <div
-          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-          onClick={() => setSaveOpen(false)}
-        >
-          <div
-            className="w-full max-w-md rounded-xl border border-stone-700 bg-stone-950 p-4 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="mb-2 text-sm font-bold text-stone-200">Save deck</h3>
+        <ModalShell onClose={() => setSaveOpen(false)} size="sm" title="Save deck">
+          <div>
             {diff.adds.length + diff.cuts.length > 0 ? (
               <div className="mb-3 max-h-44 overflow-y-auto rounded-md bg-stone-900 p-2 text-xs">
                 {diff.adds.map((a, i) => (
@@ -1137,7 +1190,7 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
               </button>
             </div>
           </div>
-        </div>
+        </ModalShell>
       )}
     </DndContext>
   );

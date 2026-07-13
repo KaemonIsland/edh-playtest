@@ -37,6 +37,27 @@ export const OTAGS: string[] = [
 ];
 
 /**
+ * Skeleton category → the otag that finds candidates for it. Keys are
+ * lowercased category names; anything unmapped opens Suggestions untagged.
+ */
+export const CATEGORY_OTAG: Record<string, string> = {
+  ramp: "ramp",
+  draw: "draw",
+  "card draw": "draw",
+  interaction: "removal",
+  removal: "removal",
+  "board wipes": "board-wipe",
+  "board wipe": "board-wipe",
+  wipes: "board-wipe",
+  protection: "protection",
+  tutors: "tutor",
+  tutor: "tutor",
+  "win cons": "wincon",
+  "win con": "wincon",
+  wincons: "wincon",
+};
+
+/**
  * Does a query use Scryfall search syntax (otag:, o:, t:, id<=ug, cmc>=3…)?
  * Such queries can't run against the local name index and go to the Scryfall
  * proxy instead.

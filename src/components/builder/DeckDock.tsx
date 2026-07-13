@@ -1,11 +1,12 @@
 "use client";
 
-import { Undo2, X } from "lucide-react";
+import { Lightbulb, Undo2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import type { Deck, DeckEntry, ScryCard } from "@/types";
 import { BOARD_CATEGORIES } from "@/types";
 import { CardRow, type ViewMode } from "@/components/builder/CardRows";
+import { Seg } from "@/components/ui/Seg";
 import { getRepo, type DeckVersion } from "@/lib/repo";
 import {
   computeOdds,
@@ -123,6 +124,7 @@ export function DeckDock({
   onToggleSelect,
   onOpenCard,
   onReplaceDraft,
+  onSuggest,
 }: {
   deck: Deck;
   update: (fn: (d: Deck) => void) => void;
@@ -136,6 +138,8 @@ export function DeckDock({
   onOpenCard: (card: ScryCard) => void;
   /** History restore: replace the editor draft with a rebuilt deck. */
   onReplaceDraft: (deck: Deck, note: string) => void;
+  /** Skeleton row clicked — open Suggestions pre-filtered for that category. */
+  onSuggest?: (category: string) => void;
 }) {
   const [tab, setTab] = useState<DockTab>("skeleton");
   const [editTargets, setEditTargets] = useState(false);
@@ -252,14 +256,22 @@ export function DeckDock({
           <div className="flex flex-col gap-1.5">
             {skeleton.map((row) => (
               <div key={row.name} className="flex items-center gap-2">
-                <span className="w-24 truncate text-[11px] text-stone-300" title={row.name}>
-                  {row.name}
+                <button
+                  onClick={() => onSuggest?.(row.name)}
+                  className="group flex w-24 items-center gap-1 truncate text-left text-[11px] text-stone-300 hover:text-emerald-300"
+                  title={`Find ${row.name} cards — opens Suggestions`}
+                >
+                  <span className="truncate">{row.name}</span>
                   {row.auto && (
-                    <span className="ml-1 text-[8px] font-bold text-stone-600 uppercase" title="Auto-detected from card text — categorize cards to take over">
+                    <span className="text-[8px] font-bold text-stone-600 uppercase" title="Auto-detected from card text — categorize cards to take over">
                       auto
                     </span>
                   )}
-                </span>
+                  <Lightbulb
+                    size={9}
+                    className="shrink-0 opacity-0 transition group-hover:opacity-100"
+                  />
+                </button>
                 <SkeletonBar count={row.count} target={row.target} />
                 {editTargets ? (
                   <span className="flex shrink-0 items-center gap-1 font-mono text-[10px] text-stone-400">
@@ -430,19 +442,15 @@ export function DeckDock({
             <span className="text-[9px] font-bold tracking-widest text-stone-600 uppercase">
               Opening hand (7)
             </span>
-            <div className="flex gap-0.5 rounded-md bg-stone-900 p-0.5">
-              {(["categories", "types"] as const).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setOddsTab(t)}
-                  className={`rounded px-1.5 py-0.5 text-[9px] font-semibold capitalize ${
-                    oddsTab === t ? "bg-stone-700 text-white" : "text-stone-500"
-                  }`}
-                >
-                  {t === "categories" ? "Category" : "Type"}
-                </button>
-              ))}
-            </div>
+            <Seg
+              size="xs"
+              value={oddsTab}
+              onChange={setOddsTab}
+              options={[
+                { value: "categories", label: "Category" },
+                { value: "types", label: "Type" },
+              ]}
+            />
           </div>
           <table className="w-full text-[10px]">
             <thead>

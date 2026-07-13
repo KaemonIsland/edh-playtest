@@ -23,6 +23,9 @@ export function PrintingTile({
   selected,
   showName,
   showSetInfo = true,
+  dimUnowned = true,
+  badge,
+  footer,
   onOpen,
   onAdjust,
   deckQty,
@@ -37,6 +40,12 @@ export function PrintingTile({
   showName?: boolean;
   /** Show the set name + collector number line (off for same-set grids). */
   showSetInfo?: boolean;
+  /** Fade cards you don't own (off for discovery grids like Suggestions). */
+  dimUnowned?: boolean;
+  /** Extra overlay pinned to the image's top-right (e.g. synergy %). */
+  badge?: React.ReactNode;
+  /** Extra action row at the bottom (rendered after any steppers). */
+  footer?: React.ReactNode;
   onOpen?: () => void;
   /** Collection steppers (NF/F). Omitted in deck-add mode. */
   onAdjust?: (finish: CardFinish, delta: number) => void | Promise<void>;
@@ -62,7 +71,7 @@ export function PrintingTile({
         <CardImage
           card={card}
           className={`aspect-[5/7] w-full transition ${onOpen ? "group-hover:ring-2 group-hover:ring-sky-500" : ""} ${
-            owned === 0 ? "opacity-60" : ""
+            owned === 0 && dimUnowned ? "opacity-60" : ""
           }`}
         />
         {owned > 0 && (
@@ -70,6 +79,7 @@ export function PrintingTile({
             ×{owned}
           </span>
         )}
+        {badge && <span className="absolute top-1 right-1">{badge}</span>}
       </button>
       {showName && (
         <div className="truncate text-xs font-semibold text-stone-200" title={card.name}>
@@ -93,6 +103,7 @@ export function PrintingTile({
           <FinishStepper label="F" qty={ownedFoil} onAdjust={(d) => onAdjust("foil", d)} />
         </div>
       ) : null}
+      {footer}
     </div>
   );
 }

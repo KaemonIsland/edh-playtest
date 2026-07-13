@@ -2,6 +2,8 @@
 
 import { Pencil, TriangleAlert } from "lucide-react";
 import { useMemo, useState } from "react";
+import { ModalShell } from "@/components/ui/ModalShell";
+import { Seg } from "@/components/ui/Seg";
 import type { Deck, RoleOverrides } from "@/types";
 import { includedEntries, isLand } from "@/types";
 import {
@@ -53,17 +55,8 @@ function RoleEditModal({
   }, [deck, query]);
 
   return (
-    <div
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[80vh] w-full max-w-md flex-col rounded-xl border border-stone-700 bg-stone-950 p-4 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="mb-2 text-sm font-bold text-stone-200">
-          Edit “{ROLE_LABEL[role]}” cards ({selected.size})
-        </h3>
+    <ModalShell onClose={onClose} size="sm" title={`Edit “${ROLE_LABEL[role]}” cards (${selected.size})`}>
+      <div className="flex max-h-[70vh] flex-col">
         <input
           autoFocus
           value={query}
@@ -104,7 +97,7 @@ function RoleEditModal({
           </button>
         </div>
       </div>
-    </div>
+    </ModalShell>
   );
 }
 
@@ -309,19 +302,15 @@ export function StatsPanel({
       <div className="mt-4">
         <div className="mb-2 flex items-center gap-2">
           <h3 className="text-xs font-semibold text-stone-400">Opening-hand odds (7 cards)</h3>
-          <div className="flex gap-0.5 rounded-lg bg-stone-900 p-0.5">
-            {(["categories", "types"] as const).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setOddsTab(tab)}
-                className={`rounded-md px-2 py-0.5 text-[10px] font-semibold capitalize transition ${
-                  oddsTab === tab ? "bg-stone-700 text-white" : "text-stone-500"
-                }`}
-              >
-                {tab === "categories" ? "By category" : "By card type"}
-              </button>
-            ))}
-          </div>
+          <Seg
+            size="xs"
+            value={oddsTab}
+            onChange={setOddsTab}
+            options={[
+              { value: "categories", label: "By category" },
+              { value: "types", label: "By card type" },
+            ]}
+          />
         </div>
         <div className="overflow-hidden rounded-md border border-stone-800">
           <table className="w-full text-xs">

@@ -3,6 +3,7 @@
 import { FolderOpen, Gamepad2, Library, Settings, WalletCards, Wine , type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { CardSizeSelect } from "@/components/ui/CardSizeSelect";
 
 /**
  * Unified top navigation, mounted once in the root layout so every page shares
@@ -26,7 +27,7 @@ export function AppHeader() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-stone-800 bg-[#08080a]/90 backdrop-blur">
-      <div className="mx-auto flex w-full max-w-6xl items-center gap-1 px-4">
+      <div className="flex w-full items-center gap-1 px-4">
         <Link
           href="/"
           className="mr-2 flex shrink-0 items-center gap-2 py-3 text-sm font-bold tracking-tight text-stone-100"
@@ -56,6 +57,7 @@ export function AppHeader() {
           })}
         </nav>
 
+        <CardSizeSelect />
         <Link
           href="/settings"
           aria-current={pathname.startsWith("/settings") ? "page" : undefined}

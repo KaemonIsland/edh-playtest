@@ -1,7 +1,10 @@
 "use client";
 
+import { CARD_GRID } from "@/components/ui/CardSizeSelect";
 import { Crown, LayoutGrid, RefreshCw, Star, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ModalShell } from "@/components/ui/ModalShell";
+import { Seg } from "@/components/ui/Seg";
 import Link from "next/link";
 import type { Deck, DeckEntry, ScryCard, SwapRef } from "@/types";
 import { isBoardCategory } from "@/types";
@@ -19,7 +22,7 @@ import { resolveOracle } from "@/lib/cards/smartSearch";
 import { loadPriceIndex, priceOf, usePriceStore, PRICE_SOURCE_LABEL } from "@/lib/cards/pricing";
 import { typeGroup } from "@/lib/deck/stats";
 import { CardImage } from "@/components/cards/CardImage";
-import { ManaCost } from "@/components/cards/ManaCost";
+import { ManaCost, OracleText } from "@/components/cards/ManaCost";
 import { PrintingTile } from "@/components/collection/PrintingTile";
 
 type Tab = "options" | "indecks" | "collection" | "info" | "rulings";
@@ -92,6 +95,7 @@ export function CardDetailModal({
   const [addBoard, setAddBoard] = useState<"Maybeboard" | "Ideas">("Maybeboard");
   const [addNote, setAddNote] = useState<string | null>(null);
   const [printPage, setPrintPage] = useState(0);
+  const [printOwnedOnly, setPrintOwnedOnly] = useState(false);
   // Which face of a double-faced card is shown in the image (0 = front).
   const [flip, setFlip] = useState(0);
   // Swaps ("bench") search
@@ -242,7 +246,8 @@ export function CardDetailModal({
     if (tab === "indecks" && inDecks === null) {
       void refreshInDecks();
     }
-    if (tab === "collection" && owned === null) {
+    // Options tab needs owned counts too (its printings grid + owned filter).
+    if ((tab === "collection" || tab === "options") && owned === null) {
       void refreshOwned();
     }
   }, [tab, rulings, inDecks, owned, shown.id, card.oracle_id, refreshOwned, refreshInDecks]);
@@ -413,23 +418,21 @@ export function CardDetailModal({
     "";
 
   // Paginated "All printings" grid (clamped in case the page is stale).
-  const printTotal = printings?.length ?? 0;
+  // The owned-only toggle narrows to printings with any copies in the collection.
+  const printList = (printings ?? []).filter(
+    (p) => !printOwnedOnly || ownedQty(p.id, "nonfoil") + ownedQty(p.id, "foil") > 0,
+  );
+  const printTotal = printList.length;
   const printPageCount = Math.max(1, Math.ceil(printTotal / PRINTINGS_PER_PAGE));
   const printPageSafe = Math.min(printPage, printPageCount - 1);
-  const printPageItems = (printings ?? []).slice(
+  const printPageItems = printList.slice(
     printPageSafe * PRINTINGS_PER_PAGE,
     (printPageSafe + 1) * PRINTINGS_PER_PAGE,
   );
 
   return (
-    <div
-      className="fixed inset-0 z-[90] flex items-start justify-center overflow-y-auto bg-black/75 p-4 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <div
-        className="my-6 w-full max-w-3xl rounded-xl border border-stone-700 bg-stone-950 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <ModalShell onClose={onClose} size="lg" anchor="top" zClass="z-[90]" panelClassName="!p-0">
+      <div className="-m-4">
         {/* Header + tabs */}
         <div className="border-b border-stone-800 px-5 pt-4">
           <div className="flex items-start justify-between gap-2">
@@ -457,7 +460,7 @@ export function CardDetailModal({
 
         <div className="flex flex-col gap-5 p-5 sm:flex-row">
           {/* Card image (always visible) */}
-          <div className="mx-auto w-64 shrink-0 sm:mx-0">
+          <div className="mx-auto w-[max(var(--card-min,195px),195px)] shrink-0 sm:mx-0">
             <div className="relative">
               <CardImage card={faceCard} flipped={flip} className="aspect-[5/7] w-full" />
               {canFlip && (
@@ -784,19 +787,14 @@ export function CardDetailModal({
                           </option>
                         ))}
                       </select>
-                      <div className="flex gap-0.5 rounded-lg bg-stone-900 p-0.5">
-                        {(["Maybeboard", "Ideas"] as const).map((b) => (
-                          <button
-                            key={b}
-                            onClick={() => setAddBoard(b)}
-                            className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition ${
-                              addBoard === b ? "bg-stone-700 text-white" : "text-stone-400 hover:text-stone-200"
-                            }`}
-                          >
-                            {b}
-                          </button>
-                        ))}
-                      </div>
+                      <Seg
+                        value={addBoard}
+                        onChange={setAddBoard}
+                        options={[
+                          { value: "Maybeboard", label: "Maybeboard" },
+                          { value: "Ideas", label: "Ideas" },
+                        ]}
+                      />
                       <button
                         onClick={() => addTarget && void addToDeck(addTarget, addBoard)}
                         disabled={!addTarget}
@@ -938,8 +936,8 @@ export function CardDetailModal({
                           <ManaCost cost={face.mana_cost} size={14} />
                         </div>
                         <div className="text-[11px] font-semibold text-stone-400">{face.type_line}</div>
-                        <p className="text-xs leading-relaxed whitespace-pre-line text-stone-300">
-                          {face.oracle_text || "—"}
+                        <p className="text-xs leading-relaxed text-stone-300">
+                          <OracleText text={face.oracle_text || "—"} size={12} />
                         </p>
                         {(face.power !== undefined || face.loyalty !== undefined) && (
                           <div className="text-xs font-bold text-stone-400">
@@ -958,8 +956,8 @@ export function CardDetailModal({
                       <span className="text-xs text-stone-500">MV {shown.cmc}</span>
                     </div>
                     <div className="text-xs font-semibold text-stone-300">{shown.type_line}</div>
-                    <p className="text-xs leading-relaxed whitespace-pre-line text-stone-300">
-                      {oracleText || "—"}
+                    <p className="text-xs leading-relaxed text-stone-300">
+                      <OracleText text={oracleText || "—"} size={12} />
                     </p>
                     {(shown.power !== undefined || shown.loyalty !== undefined) && (
                       <div className="text-xs font-bold text-stone-400">
@@ -1010,13 +1008,33 @@ export function CardDetailModal({
           </div>
         </div>
 
-        {/* All printings — paginated grid, full width below everything (collection tab) */}
-        {tab === "collection" && (
+        {/* All printings — paginated grid, full width below everything. On the
+            Card options tab, clicking a printing makes it THE deck's printing
+            (easy path to the exact copy you own / the showcase art). */}
+        {(tab === "collection" || (tab === "options" && hasDeck)) && (
           <div className="border-t border-stone-800 px-5 pb-5 pt-3">
-            <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="mb-2 flex items-center gap-2">
               <div className="text-[10px] font-bold tracking-wide text-stone-500 uppercase">
                 All printings {printings ? `(${printTotal})` : ""}
+                {tab === "options" && (
+                  <span className="ml-1 normal-case text-stone-600">
+                    — click one to use it in this deck
+                  </span>
+                )}
               </div>
+              <Seg
+                size="xs"
+                className="ml-auto"
+                value={printOwnedOnly ? "owned" : "all"}
+                onChange={(v) => {
+                  setPrintOwnedOnly(v === "owned");
+                  setPrintPage(0);
+                }}
+                options={[
+                  { value: "all", label: "All" },
+                  { value: "owned", label: "Owned", accent: "amber", title: "Only printings you own copies of" },
+                ]}
+              />
               {printPageCount > 1 && (
                 <div className="flex items-center gap-1.5 text-[11px] text-stone-400">
                   <button
@@ -1041,8 +1059,14 @@ export function CardDetailModal({
             </div>
             {printings === null ? (
               <p className="text-xs text-stone-600">Loading printings…</p>
+            ) : printPageItems.length === 0 ? (
+              <p className="text-xs text-stone-600">
+                {printOwnedOnly
+                  ? "You don't own any printing of this card yet."
+                  : "No printings found."}
+              </p>
             ) : (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <div className={CARD_GRID}>
                 {printPageItems.map((p) => (
                   <PrintingTile
                     key={p.id}
@@ -1050,7 +1074,9 @@ export function CardDetailModal({
                     ownedNonfoil={ownedQty(p.id, "nonfoil")}
                     ownedFoil={ownedQty(p.id, "foil")}
                     selected={p.id === shown.id}
-                    onOpen={() => onNavigate?.(p)}
+                    onOpen={
+                      tab === "options" ? () => selectPrinting(p) : () => onNavigate?.(p)
+                    }
                     onAdjust={(finish, d) => adjustOwnedFor(p, finish, d)}
                   />
                 ))}
@@ -1086,7 +1112,7 @@ export function CardDetailModal({
         )}
       </div>
 
-      {/* Full-page "Select a printing" overlay */}
+      {/* Full-page "Select a printing" overlay (stacks above the card modal) */}
       {allPrintingsOpen && printings && (
         <div
           className="fixed inset-0 z-[95] overflow-y-auto bg-black/90 p-6 backdrop-blur"
@@ -1111,7 +1137,7 @@ export function CardDetailModal({
                 <X size={13} className="inline align-[-2px]" /> Close
               </button>
             </div>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+            <div className={CARD_GRID}>
               {printings
                 .filter(
                   (p) =>
@@ -1146,6 +1172,6 @@ export function CardDetailModal({
           </div>
         </div>
       )}
-    </div>
+    </ModalShell>
   );
 }

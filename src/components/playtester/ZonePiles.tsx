@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { useDraggable } from "@dnd-kit/core";
 import { Circle, Dices, X } from "lucide-react";
+import { ModalShell } from "@/components/ui/ModalShell";
 import type { ScryCard, Zone } from "@/types";
 import { PLAYER_ID, useGameStore } from "@/lib/game/store";
 import { useUiStore, type MenuItem } from "@/lib/game/uiStore";
@@ -374,25 +375,16 @@ function TokensPile() {
       )}
 
       {pickerOpen && tokens && (
-        <div
-          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-          onClick={() => setPickerOpen(false)}
+        <ModalShell
+          onClose={() => setPickerOpen(false)}
+          size="lg"
+          title={
+            <>
+              Choose a token <span className="font-normal text-stone-500">({tokens.length})</span>
+            </>
+          }
         >
-          <div
-            className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-stone-700 bg-stone-950 p-4 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-bold text-stone-200">
-                Choose a token <span className="font-normal text-stone-500">({tokens.length})</span>
-              </h2>
-              <button
-                onClick={() => setPickerOpen(false)}
-                className="rounded px-2 py-0.5 text-stone-500 hover:bg-stone-800 hover:text-stone-200"
-              >
-                <X size={14} />
-              </button>
-            </div>
+          <div>
             <p className="mb-3 text-[11px] text-stone-500">
               Pick the token to load — then click it or drag it onto the battlefield. (Detected from
               your cards via Scryfall.)
@@ -421,7 +413,7 @@ function TokensPile() {
               ))}
             </div>
           </div>
-        </div>
+        </ModalShell>
       )}
     </div>
   );

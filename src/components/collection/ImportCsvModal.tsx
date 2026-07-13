@@ -2,6 +2,7 @@
 
 import { Check, FileText, Search, X } from "lucide-react";
 import { useRef, useState } from "react";
+import { ModalShell } from "@/components/ui/ModalShell";
 import Link from "next/link";
 import {
   importCollection,
@@ -78,14 +79,8 @@ export function ImportCsvModal({
   const etaSec = Math.round(Math.ceil(uniqueIds / 75) * 0.55);
 
   return (
-    <div
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
-      onClick={stage === "running" ? undefined : onClose}
-    >
-      <div
-        className="w-full max-w-lg rounded-xl border border-stone-700 bg-stone-950 p-5 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <ModalShell onClose={stage === "running" ? () => {} : onClose} size="md">
+      <div>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-bold text-stone-200">Import collection from CSV</h2>
           {stage !== "running" && (
@@ -267,6 +262,6 @@ export function ImportCsvModal({
           </div>
         )}
       </div>
-    </div>
+    </ModalShell>
   );
 }
