@@ -1,5 +1,6 @@
 "use client";
 
+import { Dices, Settings } from "lucide-react";
 import type { ManaColor } from "@/types";
 import { isBotId, PLAYER_ID, useGameStore } from "@/lib/game/store";
 import { useBotStore } from "@/lib/game/botStore";
@@ -127,13 +128,13 @@ export function BottomBar() {
           onClick={() => openModal({ kind: "dice" })}
           className="rounded-md border border-stone-700 bg-stone-900 px-3 py-1.5 text-xs font-semibold text-stone-200 hover:bg-stone-800"
         >
-          🎲 Dice & coins
+          <Dices size={13} className="inline align-[-2px]" /> Dice & coins
         </button>
         <button
           onClick={() => openModal({ kind: "settings" })}
           className="rounded-md border border-stone-700 bg-stone-900 px-3 py-1.5 text-xs font-semibold text-stone-200 hover:bg-stone-800"
         >
-          ⚙ Settings
+          <Settings size={13} className="inline align-[-2px]" /> Settings
         </button>
         <button
           onClick={() => (hasBot ? passTurn() : g.nextTurn())}

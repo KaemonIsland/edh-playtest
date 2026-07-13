@@ -1,5 +1,6 @@
 "use client";
 
+import { FolderOpen, Gamepad2, Library, Settings, WalletCards, Wine , type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -11,11 +12,11 @@ import { usePathname } from "next/navigation";
  * /play setup).
  */
 
-const NAV: { href: string; label: string; emoji: string; match: (p: string) => boolean }[] = [
-  { href: "/collection", label: "Collection", emoji: "📚", match: (p) => p.startsWith("/collection") },
-  { href: "/cards", label: "All Cards", emoji: "🃏", match: (p) => p.startsWith("/cards") },
-  { href: "/decks", label: "Decks", emoji: "🗂️", match: (p) => p.startsWith("/decks") || p.startsWith("/d/") },
-  { href: "/import", label: "Playtest", emoji: "🎮", match: (p) => p.startsWith("/import") || p.startsWith("/play") },
+const NAV: { href: string; label: string; icon: LucideIcon; match: (p: string) => boolean }[] = [
+  { href: "/collection", label: "Collection", icon: Library, match: (p) => p.startsWith("/collection") },
+  { href: "/cards", label: "All Cards", icon: WalletCards, match: (p) => p.startsWith("/cards") },
+  { href: "/decks", label: "Decks", icon: FolderOpen, match: (p) => p.startsWith("/decks") || p.startsWith("/d/") },
+  { href: "/import", label: "Playtest", icon: Gamepad2, match: (p) => p.startsWith("/import") || p.startsWith("/play") },
 ];
 
 export function AppHeader() {
@@ -30,7 +31,7 @@ export function AppHeader() {
           href="/"
           className="mr-2 flex shrink-0 items-center gap-2 py-3 text-sm font-bold tracking-tight text-stone-100"
         >
-          <span className="text-base">🍷</span>
+          <Wine size={16} className="text-rose-400" />
           <span className="hidden sm:inline">Glitched Goblet</span>
         </Link>
 
@@ -48,7 +49,7 @@ export function AppHeader() {
                     : "text-stone-400 hover:bg-stone-900 hover:text-stone-200"
                 }`}
               >
-                <span className="text-xs">{item.emoji}</span>
+                <item.icon size={13} className="shrink-0" />
                 {item.label}
               </Link>
             );
@@ -65,7 +66,7 @@ export function AppHeader() {
               : "text-stone-400 hover:bg-stone-900 hover:text-stone-200"
           }`}
         >
-          ⚙️
+          <Settings size={15} />
         </Link>
       </div>
     </header>

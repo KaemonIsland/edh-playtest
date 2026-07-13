@@ -1,5 +1,6 @@
 "use client";
 
+import { X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 export interface TokenOption {
@@ -104,7 +105,7 @@ export function TokenMultiSelect({
               className="text-emerald-200 hover:text-white"
               aria-label={`Remove ${labelFor(s)}`}
             >
-              ✕
+              <X size={14} />
             </button>
           </span>
         ))}

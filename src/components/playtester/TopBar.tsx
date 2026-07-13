@@ -1,5 +1,6 @@
 "use client";
 
+import { Bot } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { PHASES, type Phase } from "@/types";
 import { isBotId, PLAYER_ID, useGameStore } from "@/lib/game/store";
@@ -126,7 +127,7 @@ export function TopBar() {
                 }`}
               >
                 {isTurn && <span className="h-1.5 w-1.5 rounded-full bg-rose-400" />}
-                <span className="truncate">🤖 {g.players[id]?.name ?? id}</span>
+                <span className="flex items-center gap-1 truncate"><Bot size={12} className="shrink-0" /> {g.players[id]?.name ?? id}</span>
               </button>
             );
           })}

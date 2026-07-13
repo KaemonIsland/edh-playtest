@@ -45,9 +45,11 @@ create table if not exists deck_versions (
   title text not null,
   adds jsonb not null default '[]',
   cuts jsonb not null default '[]',
-  notes text
+  notes text,
+  snapshot jsonb
 );
 create index if not exists deck_versions_deck_idx on deck_versions(deck_id, date desc);
+alter table deck_versions add column if not exists snapshot jsonb;
 
 create table if not exists games (
   id uuid primary key default gen_random_uuid(),

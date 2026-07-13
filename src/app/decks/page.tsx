@@ -1,5 +1,6 @@
 "use client";
 
+import { X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -177,7 +178,7 @@ export default function DecksPage() {
                   className="absolute top-2 right-2 rounded bg-black/60 px-1.5 py-0.5 text-xs text-stone-400 opacity-0 transition group-hover:opacity-100 hover:text-rose-400"
                   title="Delete deck"
                 >
-                  ✕
+                  <X size={14} />
                 </button>
               </div>
             ))}

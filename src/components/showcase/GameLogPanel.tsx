@@ -1,5 +1,6 @@
 "use client";
 
+import { X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { computeGameStats, getRepo, type GameRecord, type GameResult } from "@/lib/repo";
 
@@ -231,7 +232,7 @@ export function GameLogPanel({ deckId }: { deckId: string }) {
               className="shrink-0 text-stone-600 hover:text-rose-400"
               title="Delete game"
             >
-              ✕
+              <X size={14} />
             </button>
           </div>
         ))}

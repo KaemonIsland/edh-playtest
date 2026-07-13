@@ -1,5 +1,6 @@
 "use client";
 
+import { Coins } from "lucide-react";
 import { useState } from "react";
 import { useGameStore } from "@/lib/game/store";
 import { Modal } from "./Modal";
@@ -29,7 +30,7 @@ export function DicePanel() {
           onClick={() => push(`coin → ${flipCoin()}`)}
           className="col-span-3 rounded-lg border border-amber-800/60 bg-stone-900 py-3 text-sm font-bold text-amber-400 transition hover:bg-stone-800"
         >
-          🪙 Flip a coin
+          <Coins size={13} className="inline align-[-2px]" /> Flip a coin
         </button>
       </div>
       {results.length > 0 && (

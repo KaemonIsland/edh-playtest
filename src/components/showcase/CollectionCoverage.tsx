@@ -1,5 +1,6 @@
 "use client";
 
+import { PartyPopper, Star } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { Deck, ScryCard } from "@/types";
 import { includedEntries } from "@/types";
@@ -103,7 +104,7 @@ export function CollectionCoverage({ deck }: { deck: Deck }) {
       </div>
 
       {report.missing.length === 0 ? (
-        <p className="text-xs text-emerald-400">You own every card in this deck. 🎉</p>
+        <p className="flex items-center gap-1 text-xs text-emerald-400">You own every card in this deck. <PartyPopper size={13} /></p>
       ) : (
         <div>
           <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -125,7 +126,7 @@ export function CollectionCoverage({ deck }: { deck: Deck }) {
                 }}
                 className="rounded-md bg-amber-700 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-amber-600"
               >
-                ⭐ Add missing to wishlist
+                <Star size={13} className="inline align-[-2px]" /> Add missing to wishlist
               </button>
             )}
             {added && <span className="text-[11px] text-emerald-400">{added}</span>}

@@ -46,6 +46,17 @@ export interface VersionChange {
   reason?: string;
 }
 
+/** One line of a full decklist snapshot stored with a version. */
+export interface VersionSnapshotEntry {
+  name: string;
+  qty: number;
+  /** Scryfall printing id — lets restore bring back the exact printing. */
+  printingId?: string;
+  oracleId?: string;
+  categories?: string[];
+  commander?: boolean;
+}
+
 /** One dated update session in the deck's changelog. */
 export interface DeckVersion {
   id?: number | string;
@@ -55,6 +66,8 @@ export interface DeckVersion {
   adds: VersionChange[];
   cuts: VersionChange[];
   notes?: string;
+  /** Full decklist at save time — enables restore and compare. */
+  snapshot?: VersionSnapshotEntry[];
 }
 
 export type GameResult = "W" | "L" | "D";

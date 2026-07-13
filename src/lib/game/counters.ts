@@ -1,5 +1,30 @@
 "use client";
 
+import {
+  Award,
+  BatteryCharging,
+  Biohazard,
+  Cat,
+  Circle,
+  CircleMinus,
+  CirclePlus,
+  Droplets,
+  Eye,
+  Feather,
+  Gem,
+  Hand,
+  Heart,
+  PawPrint,
+  Shield,
+  Skull,
+  Sparkle,
+  Sword,
+  Swords,
+  Target,
+  Zap,
+  type LucideIcon,
+} from "lucide-react";
+
 /**
  * Counter types for the playtester's "Dice Bag". A counter's `name` is what gets
  * stored on a card instance (and shown on its chip); the icon/label are only for
@@ -10,35 +35,34 @@ export interface CounterDef {
   name: string;
   /** Short display label for the picker. */
   label: string;
-  /** Emoji/glyph icon. */
-  icon: string;
+  icon: LucideIcon;
 }
 
 /** MIME type used to carry a counter name through native drag-and-drop. */
 export const COUNTER_DND_TYPE = "application/x-mtg-counter";
 
 export const COUNTER_TYPES: CounterDef[] = [
-  { name: "+1/+1", label: "+1/+1", icon: "🟢" },
-  { name: "-1/-1", label: "-1/-1", icon: "🔴" },
-  { name: "loyalty", label: "Loyalty", icon: "🛡️" },
-  { name: "charge", label: "Charge", icon: "🔋" },
-  { name: "flying", label: "Flying", icon: "🕊️" },
-  { name: "deathtouch", label: "Deathtouch", icon: "💀" },
-  { name: "first strike", label: "First strike", icon: "⚔️" },
-  { name: "double strike", label: "Double strike", icon: "⚔️" },
-  { name: "vigilance", label: "Vigilance", icon: "👁️" },
-  { name: "trample", label: "Trample", icon: "🐾" },
-  { name: "lifelink", label: "Lifelink", icon: "❤️" },
-  { name: "menace", label: "Menace", icon: "😼" },
-  { name: "hexproof", label: "Hexproof", icon: "✋" },
-  { name: "indestructible", label: "Indestructible", icon: "🗿" },
-  { name: "haste", label: "Haste", icon: "⚡" },
-  { name: "reach", label: "Reach", icon: "🏹" },
-  { name: "shield", label: "Shield", icon: "🔰" },
-  { name: "stun", label: "Stun", icon: "💫" },
-  { name: "poison", label: "Poison", icon: "☣️" },
-  { name: "oil", label: "Oil", icon: "🛢️" },
-  { name: "generic", label: "Generic", icon: "⬤" },
+  { name: "+1/+1", label: "+1/+1", icon: CirclePlus },
+  { name: "-1/-1", label: "-1/-1", icon: CircleMinus },
+  { name: "loyalty", label: "Loyalty", icon: Award },
+  { name: "charge", label: "Charge", icon: BatteryCharging },
+  { name: "flying", label: "Flying", icon: Feather },
+  { name: "deathtouch", label: "Deathtouch", icon: Skull },
+  { name: "first strike", label: "First strike", icon: Sword },
+  { name: "double strike", label: "Double strike", icon: Swords },
+  { name: "vigilance", label: "Vigilance", icon: Eye },
+  { name: "trample", label: "Trample", icon: PawPrint },
+  { name: "lifelink", label: "Lifelink", icon: Heart },
+  { name: "menace", label: "Menace", icon: Cat },
+  { name: "hexproof", label: "Hexproof", icon: Hand },
+  { name: "indestructible", label: "Indestructible", icon: Gem },
+  { name: "haste", label: "Haste", icon: Zap },
+  { name: "reach", label: "Reach", icon: Target },
+  { name: "shield", label: "Shield", icon: Shield },
+  { name: "stun", label: "Stun", icon: Sparkle },
+  { name: "poison", label: "Poison", icon: Biohazard },
+  { name: "oil", label: "Oil", icon: Droplets },
+  { name: "generic", label: "Generic", icon: Circle },
 ];
 
 const RECENT_KEY = "edh-playtest:recent-counters";

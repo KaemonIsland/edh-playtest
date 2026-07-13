@@ -1,5 +1,6 @@
 "use client";
 
+import { X } from "lucide-react";
 import { motion } from "framer-motion";
 import { useUiStore } from "@/lib/game/uiStore";
 
@@ -34,7 +35,7 @@ export function Modal({
             onClick={closeModal}
             className="rounded px-2 py-0.5 text-stone-500 hover:bg-stone-800 hover:text-stone-200"
           >
-            ✕
+            <X size={14} />
           </button>
         </div>
         <div className="flex-1 overflow-y-auto p-4">{children}</div>

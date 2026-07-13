@@ -1,5 +1,6 @@
 "use client";
 
+import { X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { getRepo, type DeckComment } from "@/lib/repo";
 
@@ -76,7 +77,7 @@ export function CommentsPanel({ deckId }: { deckId: string }) {
           className="text-stone-600 hover:text-rose-400"
           title="Delete (owner moderation)"
         >
-          ✕
+          <X size={14} />
         </button>
       </div>
       <p className="mt-0.5 text-xs whitespace-pre-line text-stone-300">{comment.body}</p>

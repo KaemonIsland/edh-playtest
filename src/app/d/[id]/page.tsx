@@ -1,5 +1,6 @@
 "use client";
 
+import { Check, Pencil, X } from "lucide-react";
 import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import type { Deck } from "@/types";
@@ -144,8 +145,8 @@ export default function ShowcasePage({ params }: { params: Promise<{ id: string 
                   placeholder="aggro, tokens, pet-deck"
                   className="rounded-md border border-stone-700 bg-stone-900 px-2 py-0.5 text-[11px] outline-none focus:border-emerald-600"
                 />
-                <button onClick={saveTags} className="text-[11px] font-bold text-emerald-400">✓</button>
-                <button onClick={() => setEditingTags(false)} className="text-[11px] text-stone-500">✕</button>
+                <button onClick={saveTags} className="text-[11px] font-bold text-emerald-400"><Check size={13} /></button>
+                <button onClick={() => setEditingTags(false)} className="text-[11px] text-stone-500"><X size={13} /></button>
               </span>
             ) : (
               <button
@@ -155,7 +156,7 @@ export default function ShowcasePage({ params }: { params: Promise<{ id: string 
                 }}
                 className="rounded-full border border-dashed border-stone-700 px-2.5 py-0.5 text-[11px] text-stone-500 hover:text-stone-300"
               >
-                {tags.length > 0 ? "✎ tags" : "+ add tags"}
+                {tags.length > 0 ? <><Pencil size={10} className="inline align-[-1px]" /> tags</> : "+ add tags"}
               </button>
             )}
           </div>
@@ -166,7 +167,7 @@ export default function ShowcasePage({ params }: { params: Promise<{ id: string 
               href={`/d/${deck.id}/edit`}
               className="rounded-md bg-sky-700 px-4 py-2 text-xs font-bold text-white shadow hover:bg-sky-600"
             >
-              ✎ Edit deck
+              <Pencil size={13} className="inline align-[-2px]" /> Edit deck
             </Link>
             <ShareBar deck={deck.deck} />
           </div>

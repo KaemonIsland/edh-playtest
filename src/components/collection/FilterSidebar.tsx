@@ -1,5 +1,6 @@
 "use client";
 
+import { Crown } from "lucide-react";
 import type { ScryCard } from "@/types";
 import { isLand } from "@/types";
 import type { CardSort } from "@/lib/cards/sort";
@@ -246,7 +247,7 @@ export function FilterSidebar({
         }`}
         title="Only legendary creatures / cards that can be your commander"
       >
-        👑 Can be commander
+        <Crown size={13} className="inline align-[-2px]" /> Can be commander
       </button>
 
       <div>

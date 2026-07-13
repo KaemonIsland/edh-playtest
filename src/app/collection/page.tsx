@@ -1,5 +1,6 @@
 "use client";
 
+import { Archive, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { ScryCard } from "@/types";
@@ -182,7 +183,7 @@ export default function CollectionPage() {
             href="/collection/resolve"
             className="mb-4 flex items-center gap-3 rounded-lg border border-amber-700/50 bg-amber-950/30 px-4 py-3 text-sm transition hover:border-amber-600 hover:bg-amber-950/50"
           >
-            <span className="text-lg">🔎</span>
+            <Search size={18} className="shrink-0 text-amber-300" />
             <span className="flex-1 text-amber-200">
               <strong>{unresolvedCount}</strong> card{unresolvedCount === 1 ? "" : "s"} from a CSV
               import couldn’t be matched automatically.
@@ -195,8 +196,8 @@ export default function CollectionPage() {
         <div className="mb-4 inline-flex gap-0.5 rounded-lg bg-stone-900 p-0.5">
           {(
             [
-              ["collection", "📚 Collection"],
-              ["wishlist", `⭐ Wishlist${wishlist?.length ? ` (${wishlist.length})` : ""}`],
+              ["collection", "Collection"],
+              ["wishlist", `Wishlist${wishlist?.length ? ` (${wishlist.length})` : ""}`],
             ] as const
           ).map(([m, label]) => (
             <button
@@ -275,7 +276,7 @@ export default function CollectionPage() {
               onClick={() => setSearchModal(search)}
               className="shrink-0 rounded-md bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-600"
             >
-              🔍 Browse cards
+              <Search size={13} className="inline align-[-2px]" /> Browse cards
             </button>
           </div>
         )}
@@ -302,7 +303,7 @@ export default function CollectionPage() {
             ) : wishlistVisible.length === 0 ? (
               <div className="rounded-xl border border-dashed border-stone-800 p-10 text-center text-sm text-stone-500">
                 {(wishlist.length ?? 0) === 0
-                  ? "Your wishlist is empty. Add cards from any card's detail view (Collection Records → ⭐ Wishlist)."
+                  ? "Your wishlist is empty. Add cards from any card's detail view (Collection Records → Wishlist)."
                   : "No wishlist cards match these filters."}
               </div>
             ) : (
@@ -341,7 +342,7 @@ export default function CollectionPage() {
               onClick={() => setView({ kind: "all" })}
               className="mb-4 flex w-full items-center gap-3 rounded-xl border border-stone-700 bg-gradient-to-r from-stone-900 to-stone-950 px-4 py-4 text-left transition hover:border-emerald-600/60"
             >
-              <span className="text-2xl">🗃️</span>
+              <Archive size={26} className="shrink-0 text-stone-400" />
               <div className="flex-1">
                 <div className="text-base font-bold text-stone-100">All cards</div>
                 <div className="text-xs text-stone-500">Browse and filter your entire collection</div>

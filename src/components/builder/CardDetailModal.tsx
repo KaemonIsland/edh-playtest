@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Crown, LayoutGrid, RefreshCw, Star, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import type { Deck, DeckEntry, ScryCard } from "@/types";
+import type { Deck, DeckEntry, ScryCard, SwapRef } from "@/types";
 import { isBoardCategory } from "@/types";
 import {
   collectionEntryId,
@@ -13,7 +14,8 @@ import {
 } from "@/lib/repo";
 import { adjustCollection } from "@/lib/cards/collection";
 import { adjustWishlist } from "@/lib/cards/wishlist";
-import { fetchPrintings } from "@/lib/cards/carddb";
+import { fetchPrintings, searchCards } from "@/lib/cards/carddb";
+import { resolveOracle } from "@/lib/cards/smartSearch";
 import { loadPriceIndex, priceOf, usePriceStore, PRICE_SOURCE_LABEL } from "@/lib/cards/pricing";
 import { typeGroup } from "@/lib/deck/stats";
 import { CardImage } from "@/components/cards/CardImage";
@@ -92,6 +94,10 @@ export function CardDetailModal({
   const [printPage, setPrintPage] = useState(0);
   // Which face of a double-faced card is shown in the image (0 = front).
   const [flip, setFlip] = useState(0);
+  // Swaps ("bench") search
+  const [swapQuery, setSwapQuery] = useState("");
+  const [swapResults, setSwapResults] = useState<ScryCard[]>([]);
+  const swapTimer = useRef<number | null>(null);
 
   // Prices come from the synced MTGJSON index (keyed by Scryfall id), not the
   // card's embedded Scryfall price — MTGJSON-sourced cards carry no `prices`.
@@ -197,7 +203,21 @@ export function CardDetailModal({
     setPrintFilter("");
     setPrintPage(0);
     setFlip(0);
+    setSwapQuery("");
+    setSwapResults([]);
   }, [card.oracle_id]);
+
+  // Debounced suggestion search for the Swaps bench.
+  useEffect(() => {
+    if (swapTimer.current) window.clearTimeout(swapTimer.current);
+    if (swapQuery.trim().length < 2) {
+      setSwapResults([]);
+      return;
+    }
+    swapTimer.current = window.setTimeout(() => {
+      void searchCards(swapQuery, 6).then(setSwapResults);
+    }, 250);
+  }, [swapQuery]);
 
   // Lazy-load printings for the dropdown.
   useEffect(() => {
@@ -237,7 +257,13 @@ export function CardDetailModal({
     if (existing) {
       if (!existing.categories.includes(board)) existing.categories.unshift(board);
     } else {
-      d.entries.push({ card: shown, quantity: 1, isCommander: false, categories: [board] });
+      d.entries.push({
+        card: shown,
+        quantity: 1,
+        isCommander: false,
+        categories: [board],
+        addedAt: Date.now(),
+      });
     }
     if (d.categorySettings?.[board] === undefined) {
       d.categorySettings = { ...d.categorySettings, [board]: { inDeck: false, inPrice: false } };
@@ -271,7 +297,14 @@ export function CardDetailModal({
         return;
       }
       if (e) e.quantity = next;
-      else d.entries.push({ card: shown, quantity: next, isCommander: false, categories: [] });
+      else
+        d.entries.push({
+          card: shown,
+          quantity: next,
+          isCommander: false,
+          categories: [],
+          addedAt: Date.now(),
+        });
     });
   };
 
@@ -279,7 +312,7 @@ export function CardDetailModal({
     update?.((d) => {
       let e = d.entries.find((x) => x.card.oracle_id === card.oracle_id);
       if (!e) {
-        e = { card: shown, quantity: 1, isCommander: false, categories: [] };
+        e = { card: shown, quantity: 1, isCommander: false, categories: [], addedAt: Date.now() };
         d.entries.push(e);
       }
       e.isCommander = !e.isCommander;
@@ -292,7 +325,7 @@ export function CardDetailModal({
     update?.((d) => {
       let e = d.entries.find((x) => x.card.oracle_id === card.oracle_id);
       if (!e) {
-        e = { card: shown, quantity: 1, isCommander: false, categories: [] };
+        e = { card: shown, quantity: 1, isCommander: false, categories: [], addedAt: Date.now() };
         d.entries.push(e);
       }
       if (!e.categories.includes(cat)) e.categories.push(cat);
@@ -303,6 +336,45 @@ export function CardDetailModal({
         d.categorySettings = { ...d.categorySettings, [cat]: { inDeck: false, inPrice: false } };
       }
     });
+  };
+
+  const addSwap = (c: ScryCard) => {
+    update?.((d) => {
+      const e = d.entries.find((x) => x.card.oracle_id === card.oracle_id);
+      if (!e || c.oracle_id === e.card.oracle_id) return;
+      const swaps = e.swaps ?? [];
+      if (!swaps.some((s) => s.oracleId === c.oracle_id)) {
+        e.swaps = [...swaps, { oracleId: c.oracle_id, name: c.name }];
+      }
+    });
+    setSwapQuery("");
+    setSwapResults([]);
+  };
+
+  const removeSwap = (oracleId: string) => {
+    update?.((d) => {
+      const e = d.entries.find((x) => x.card.oracle_id === card.oracle_id);
+      if (e) e.swaps = (e.swaps ?? []).filter((s) => s.oracleId !== oracleId);
+    });
+  };
+
+  /** Swap the benched card into the slot; the current card takes its place. */
+  const promoteSwap = async (s: SwapRef) => {
+    const newCard = await resolveOracle(s.oracleId, s.name);
+    if (!newCard) return;
+    update?.((d) => {
+      const e = d.entries.find((x) => x.card.oracle_id === card.oracle_id);
+      if (!e) return;
+      const bench: SwapRef = { oracleId: e.card.oracle_id, name: e.card.name };
+      e.swaps = [...(e.swaps ?? []).filter((x) => x.oracleId !== s.oracleId), bench];
+      e.card = newCard;
+      e.addedAt = Date.now();
+      if (e.isCommander) {
+        d.commanders = d.entries.filter((x) => x.isCommander).map((x) => x.card);
+        d.colorIdentity = [...new Set(d.commanders.flatMap((c) => c.color_identity))];
+      }
+    });
+    onNavigate?.(newCard);
   };
 
   const selectPrinting = (p: ScryCard) => {
@@ -363,7 +435,7 @@ export function CardDetailModal({
           <div className="flex items-start justify-between gap-2">
             <h2 className="text-xl font-bold text-stone-100">{shown.name}</h2>
             <button onClick={onClose} className="rounded px-2 py-0.5 text-stone-500 hover:bg-stone-800 hover:text-stone-200">
-              ✕
+              <X size={14} />
             </button>
           </div>
           <div className="mt-2 flex gap-4 overflow-x-auto">
@@ -394,7 +466,7 @@ export function CardDetailModal({
                   className="absolute right-2 bottom-2 flex items-center gap-1 rounded-full bg-black/75 px-2.5 py-1 text-[11px] font-bold text-white shadow-lg ring-1 ring-white/20 hover:bg-black/90"
                   title="Flip to the other face"
                 >
-                  ↻ Flip
+                  <RefreshCw size={11} className="inline align-[-1px]" /> Flip
                 </button>
               )}
             </div>
@@ -447,7 +519,7 @@ export function CardDetailModal({
                         : "border border-stone-700 bg-stone-900 text-stone-200 hover:bg-stone-800"
                     }`}
                   >
-                    {entry?.isCommander ? "★ Unset Commander" : "♛ Set Commander"}
+                    {entry?.isCommander ? <><Crown size={13} className="inline align-[-2px]" /> Unset Commander</> : <><Crown size={13} className="inline align-[-2px]" /> Set Commander</>}
                   </button>
                 </div>
 
@@ -478,7 +550,7 @@ export function CardDetailModal({
                       disabled={!printings || printings.length === 0}
                       className="shrink-0 rounded-md border border-stone-700 bg-stone-900 px-3 py-2 text-xs font-semibold text-stone-200 hover:bg-stone-800 disabled:opacity-40"
                     >
-                      ▦ All printings
+                      <LayoutGrid size={12} className="inline align-[-2px]" /> All printings
                     </button>
                   </div>
                 </div>
@@ -486,7 +558,7 @@ export function CardDetailModal({
                 {/* Categories */}
                 <div className="rounded-lg border border-stone-800 bg-stone-900/40 p-3">
                   <div className="mb-1.5 text-[10px] font-bold tracking-wide text-stone-500 uppercase">
-                    Categories <span className="normal-case">(★ = premier)</span>
+                    Categories <span className="normal-case">(<Star size={9} className="inline align-[-1px]" /> = premier)</span>
                   </div>
                   <div className="flex flex-col gap-1">
                     {(entry?.categories ?? []).map((cat, i) => (
@@ -502,7 +574,7 @@ export function CardDetailModal({
                           className={i === 0 ? "text-amber-400" : "text-stone-600 hover:text-amber-400"}
                           title={i === 0 ? "Premier category" : "Make premier"}
                         >
-                          ★
+                          <Star size={13} fill={i === 0 ? "currentColor" : "none"} />
                         </button>
                         <span className="flex-1 text-xs text-stone-200">{cat}</span>
                         <button
@@ -514,7 +586,7 @@ export function CardDetailModal({
                           }
                           className="text-stone-600 hover:text-rose-400"
                         >
-                          ✕
+                          <X size={14} />
                         </button>
                       </div>
                     ))}
@@ -571,6 +643,72 @@ export function CardDetailModal({
                     </div>
                   </div>
                 </div>
+
+                {/* Swaps — alternatives benched behind this slot */}
+                {entry && (
+                  <div className="rounded-lg border border-stone-800 bg-stone-900/40 p-3">
+                    <div className="mb-1.5 text-[10px] font-bold tracking-wide text-stone-500 uppercase">
+                      ⇄ Swaps{" "}
+                      <span className="normal-case text-stone-600">
+                        — cards that could do this job instead
+                      </span>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      {(entry.swaps ?? []).map((s) => (
+                        <div
+                          key={s.oracleId}
+                          className="flex items-center gap-2 rounded-md bg-stone-900 px-2.5 py-1.5"
+                        >
+                          <span className="min-w-0 flex-1 truncate text-xs text-stone-200">
+                            {s.name}
+                          </span>
+                          <button
+                            onClick={() => void promoteSwap(s)}
+                            className="rounded-md border border-violet-800/60 bg-violet-950/30 px-2 py-0.5 text-[10px] font-bold text-violet-300 hover:bg-violet-900/40"
+                            title={`Swap ${s.name} in — ${entry.card.name} moves to the bench`}
+                          >
+                            ⇄ Swap in
+                          </button>
+                          <button
+                            onClick={() => removeSwap(s.oracleId)}
+                            className="text-stone-600 hover:text-rose-400"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ))}
+                      {(entry.swaps ?? []).length === 0 && (
+                        <span className="text-[11px] text-stone-600">
+                          No benched alternatives yet.
+                        </span>
+                      )}
+                    </div>
+                    <div className="relative mt-2">
+                      <input
+                        value={swapQuery}
+                        onChange={(e) => setSwapQuery(e.target.value)}
+                        placeholder="+ Bench an alternative (search)…"
+                        className="w-full rounded-md border border-stone-700 bg-stone-950 px-2.5 py-1.5 text-xs outline-none focus:border-emerald-600"
+                      />
+                      {swapResults.length > 0 && (
+                        <div className="absolute top-8 right-0 left-0 z-40 overflow-hidden rounded-md border border-stone-700 bg-stone-900 shadow-2xl">
+                          {swapResults
+                            .filter((c) => c.oracle_id !== entry.card.oracle_id)
+                            .map((c) => (
+                              <button
+                                key={c.id}
+                                onClick={() => addSwap(c)}
+                                className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs text-stone-200 hover:bg-stone-800"
+                              >
+                                <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                                <ManaCost cost={c.mana_cost} size={11} />
+                              </button>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -687,7 +825,7 @@ export function CardDetailModal({
                   {/* Wishlist control */}
                   <div className="ml-auto flex items-center gap-1 rounded-md border border-stone-700 bg-stone-900 px-1.5 py-1">
                     <span className="text-[10px] font-bold tracking-wide text-amber-400 uppercase">
-                      ⭐ Wishlist
+                      <Star size={11} className="inline align-[-1px]" /> Wishlist
                     </span>
                     <button
                       onClick={() => void adjustWish(-1)}
@@ -718,7 +856,7 @@ export function CardDetailModal({
                       disabled={!printings || printings.length === 0}
                       className="shrink-0 rounded-md border border-stone-700 bg-stone-900 px-2 py-1 text-[10px] font-semibold text-stone-200 hover:bg-stone-800 disabled:opacity-40"
                     >
-                      ▦ Choose printing
+                      <LayoutGrid size={11} className="inline align-[-1px]" /> Choose printing
                     </button>
                   </div>
                   <div className="flex flex-col gap-1.5">
@@ -970,7 +1108,7 @@ export function CardDetailModal({
                 onClick={() => setAllPrintingsOpen(false)}
                 className="ml-auto rounded-md bg-stone-800 px-3 py-1.5 text-xs font-semibold text-stone-300 hover:bg-stone-700"
               >
-                ✕ Close
+                <X size={13} className="inline align-[-2px]" /> Close
               </button>
             </div>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">

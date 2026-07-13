@@ -1,5 +1,6 @@
 "use client";
 
+import { Pencil, TriangleAlert } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { Deck, RoleOverrides } from "@/types";
 import { includedEntries, isLand } from "@/types";
@@ -205,7 +206,7 @@ export function StatsPanel({
           </p>
           {stats.shortfalls.length > 0 && (
             <p className="mt-1 text-[11px] font-semibold text-rose-400">
-              ⚠ The mana base looks light on{" "}
+              <TriangleAlert size={12} className="inline align-[-1px]" /> The mana base looks light on{" "}
               {stats.shortfalls
                 .map((c) => ({ W: "white", U: "blue", B: "black", R: "red", G: "green" })[c])
                 .join(", ")}{" "}
@@ -234,7 +235,7 @@ export function StatsPanel({
                   title={
                     hasOverride(role)
                       ? "Auto-detected with your manual corrections"
-                      : "Auto-detected from card text — click ✎ to correct"
+                      : "Auto-detected from card text — click Edit list to correct"
                   }
                 >
                   {hasOverride(role) ? "edited" : "auto"}
@@ -248,7 +249,7 @@ export function StatsPanel({
                   onClick={() => setOpenRole(role)}
                   className="text-[10px] text-stone-500 hover:text-stone-300"
                 >
-                  ✎ Edit list
+                  <Pencil size={10} className="inline align-[-1px]" /> Edit list
                 </button>
               )}
               <button

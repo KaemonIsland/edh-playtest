@@ -1,5 +1,6 @@
 "use client";
 
+import { Bot } from "lucide-react";
 import { useState } from "react";
 import { MAX_OPPONENTS, isBotId, useGameStore } from "@/lib/game/store";
 import { useUiStore } from "@/lib/game/uiStore";
@@ -81,7 +82,7 @@ export function OpponentsModal() {
                 key={id}
                 className="flex items-center gap-2 rounded-md bg-stone-900 px-3 py-2"
               >
-                <span className="text-sm">🤖</span>
+                <Bot size={15} />
                 <span className="min-w-0 flex-1 truncate text-xs font-semibold text-stone-200">
                   {g.players[id]?.name ?? id}
                 </span>

@@ -1,5 +1,21 @@
 "use client";
 
+import {
+  ArrowRight,
+  Copy,
+  Crown,
+  Layers,
+  Play,
+  Plus,
+  RotateCcw,
+  RotateCw,
+  Shuffle,
+  SkipForward,
+  SquareDashed,
+  Trash2,
+  Undo2,
+  X,
+} from "lucide-react";
 import { controllerOf, PLAYER_ID, useGameStore } from "@/lib/game/store";
 import { useUiStore, type MenuItem } from "@/lib/game/uiStore";
 import type { Zone } from "@/types";
@@ -26,7 +42,7 @@ function refreshCardMenu(instanceId: string) {
   if (ui.menu) ui.refreshMenu(buildCardMenu(instanceId));
 }
 
-/** Inline rows for counters already on the card: label  − n +  🗑 */
+/** Inline rows for counters already on the card: label  − n +  remove */
 function counterRows(instanceId: string): MenuItem[] {
   const g = useGameStore.getState();
   const inst = g.instances[instanceId];
@@ -65,7 +81,7 @@ function addCountersSubmenu(instanceId: string): MenuItem[] {
     { label: "", separator: true },
     {
       label: "Custom counter…",
-      icon: "✛",
+      icon: Plus,
       onClick: () => {
         const name = window.prompt("Counter name:");
         if (name?.trim()) g.addCounterOnCard(instanceId, name.trim(), 1);
@@ -112,7 +128,7 @@ function moveToSubmenu(
       { label: "", separator: true },
       {
         label: "Shuffle group → bottom of library",
-        icon: "🔀",
+        icon: Shuffle,
         onClick: () => {
           g.shuffleToLibraryBottom(instanceIds);
           useUiStore.getState().clearSelected();
@@ -197,39 +213,39 @@ export function buildCardMenu(instanceId: string): MenuItem[] {
     items.push(
       {
         label: inst.tapped ? (group ? "Untap selected" : "Untap") : group ? "Tap selected" : "Tap",
-        icon: "⤵",
+        icon: RotateCw,
         onClick: () =>
           group ? g.toggleTapMany(targets, instanceId) : g.toggleTap(instanceId),
       },
       {
         label: group ? `Move ${targets.length} to` : "Move to",
-        icon: "→",
+        icon: ArrowRight,
         children: moveToSubmenu(targets, "battlefield", isCommander),
       },
       ...(group
         ? []
-        : [{ label: "Card actions", icon: "🂠", children: cardActionsSubmenu(instanceId) }]),
+        : [{ label: "Card actions", icon: Layers, children: cardActionsSubmenu(instanceId) }]),
       { label: "", separator: true },
       {
         label: group ? "+1/+1 counter (each)" : "+1/+1 counter",
-        icon: "✛",
+        icon: Plus,
         onClick: () => {
           for (const id of targets) g.addCounterOnCard(id, "+1/+1", 1);
         },
       },
-      ...(group ? [] : [{ label: "Add counters", icon: "✚", children: addCountersSubmenu(instanceId) }]),
+      ...(group ? [] : [{ label: "Add counters", icon: Plus, children: addCountersSubmenu(instanceId) }]),
       ...(group ? [] : counterRows(instanceId)),
       { label: "", separator: true },
       ...(group
         ? []
-        : [{ label: "Create token copy", icon: "⧉", onClick: () => g.cloneInstance(instanceId) }]),
+        : [{ label: "Create token copy", icon: Copy, onClick: () => g.cloneInstance(instanceId) }]),
       {
         label: group
           ? `Delete ${targets.length} from game`
           : inst.isToken
             ? "Remove token"
             : "Delete card from game",
-        icon: "🗑",
+        icon: Trash2,
         danger: true,
         onClick: () => {
           for (const id of targets) g.removeInstance(id);
@@ -239,33 +255,33 @@ export function buildCardMenu(instanceId: string): MenuItem[] {
     );
   } else if (inst.zone === "hand") {
     items.push(
-      { label: "Play to battlefield", icon: "▶", onClick: () => g.moveCard(instanceId, "battlefield") },
+      { label: "Play to battlefield", icon: Play, onClick: () => g.moveCard(instanceId, "battlefield") },
       {
         label: "Play face down",
-        icon: "🂠",
+        icon: Layers,
         onClick: () => {
           g.moveCard(instanceId, "battlefield");
           g.setFaceDown(instanceId, true);
         },
       },
       { label: "", separator: true },
-      { label: "Move to", icon: "→", children: moveToSubmenu([instanceId], "hand", isCommander) },
+      { label: "Move to", icon: ArrowRight, children: moveToSubmenu([instanceId], "hand", isCommander) },
     );
   } else if (inst.zone === "command") {
     const tax = (g.players[inst.ownerId]?.commanderTax[inst.oracleId] ?? 0) * 2;
     items.push(
       {
         label: `Cast commander${tax > 0 ? ` (+${tax} tax)` : ""}`,
-        icon: "♛",
+        icon: Crown,
         onClick: () => g.moveCard(instanceId, "battlefield"),
       },
-      { label: "Move to", icon: "→", children: moveToSubmenu([instanceId], "command", isCommander) },
+      { label: "Move to", icon: ArrowRight, children: moveToSubmenu([instanceId], "command", isCommander) },
     );
   } else {
     // graveyard / exile / library cards (from browse modals or pile tops)
     items.push({
       label: "Move to",
-      icon: "→",
+      icon: ArrowRight,
       children: moveToSubmenu([instanceId], inst.zone, isCommander),
     });
   }
@@ -286,10 +302,10 @@ export function buildBattlefieldMenu(playerId: string = PLAYER_ID): MenuItem[] {
   );
 
   const items: MenuItem[] = [
-    { label: "Tap all", icon: "⤵", onClick: () => g.tapAll(playerId) },
+    { label: "Tap all", icon: RotateCw, onClick: () => g.tapAll(playerId) },
     {
       label: "Untap all",
-      icon: "⤴",
+      icon: RotateCcw,
       hint: mine ? "U" : undefined,
       onClick: () => g.untapAll(playerId),
     },
@@ -299,18 +315,18 @@ export function buildBattlefieldMenu(playerId: string = PLAYER_ID): MenuItem[] {
   if (mine) {
     items.push({
       label: "Next turn (untap + draw)",
-      icon: "▸",
+      icon: SkipForward,
       hint: "N",
       onClick: () => g.nextTurn(),
     });
   }
 
   items.push(
-    { label: "Proliferate all counters", icon: "✚", onClick: () => g.proliferate(playerId) },
+    { label: "Proliferate all counters", icon: Plus, onClick: () => g.proliferate(playerId) },
     { label: "", separator: true },
     {
       label: "Add token / search Scryfall",
-      icon: "⧉",
+      icon: Copy,
       hint: mine ? "T" : undefined,
       onClick: () => ui.openModal({ kind: "token", playerId }),
     },
@@ -321,13 +337,13 @@ export function buildBattlefieldMenu(playerId: string = PLAYER_ID): MenuItem[] {
       { label: "", separator: true },
       {
         label: `Select all (${battlefieldIds.length})`,
-        icon: "▭",
+        icon: SquareDashed,
         disabled: battlefieldIds.length === 0,
         onClick: () => ui.setSelected(battlefieldIds),
       },
       {
         label: "Clear selection",
-        icon: "✕",
+        icon: X,
         disabled: ui.selected.length === 0,
         onClick: () => ui.clearSelected(),
       },
@@ -338,7 +354,7 @@ export function buildBattlefieldMenu(playerId: string = PLAYER_ID): MenuItem[] {
     { label: "", separator: true },
     {
       label: "Undo action",
-      icon: "↺",
+      icon: Undo2,
       hint: "Z",
       disabled: g.history.length === 0,
       onClick: () => g.undo(),

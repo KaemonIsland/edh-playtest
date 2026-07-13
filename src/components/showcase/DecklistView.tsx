@@ -1,5 +1,6 @@
 "use client";
 
+import { X } from "lucide-react";
 import { useState } from "react";
 import type { Deck, ScryCard } from "@/types";
 import { activeFace } from "@/types";
@@ -70,7 +71,7 @@ export function DecklistView({ deck }: { deck: Deck }) {
             <div className="min-w-0 text-sm">
               <div className="flex items-start justify-between gap-2">
                 <h3 className="font-bold text-stone-100">{detail.name}</h3>
-                <button onClick={() => setDetail(null)} className="text-stone-500 hover:text-stone-200">✕</button>
+                <button onClick={() => setDetail(null)} className="text-stone-500 hover:text-stone-200"><X size={14} /></button>
               </div>
               <div className="text-xs text-stone-500">{detail.type_line}</div>
               <p className="mt-2 text-xs leading-relaxed whitespace-pre-line text-stone-300">

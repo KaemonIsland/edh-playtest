@@ -1,5 +1,6 @@
 "use client";
 
+import { Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ScryCard } from "@/types";
 import { collectionEntryId, getRepo, type CardFinish } from "@/lib/repo";
@@ -225,7 +226,7 @@ export default function AllCardsPage() {
             onClick={() => setSearchModal(search)}
             className="shrink-0 rounded-md bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-600"
           >
-            🔍 Search all cards
+            <Search size={13} className="inline align-[-2px]" /> Search all cards
           </button>
         </div>
       </div>

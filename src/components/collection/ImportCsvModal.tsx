@@ -1,5 +1,6 @@
 "use client";
 
+import { Check, FileText, Search, X } from "lucide-react";
 import { useRef, useState } from "react";
 import Link from "next/link";
 import {
@@ -89,7 +90,7 @@ export function ImportCsvModal({
           <h2 className="text-sm font-bold text-stone-200">Import collection from CSV</h2>
           {stage !== "running" && (
             <button onClick={onClose} className="rounded px-2 text-stone-500 hover:text-stone-200">
-              ✕
+              <X size={14} />
             </button>
           )}
         </div>
@@ -105,7 +106,7 @@ export function ImportCsvModal({
               onClick={() => fileInput.current?.click()}
               className="rounded-lg border border-dashed border-stone-700 bg-stone-900/50 px-4 py-8 text-sm font-semibold text-stone-300 hover:border-stone-500 hover:bg-stone-900"
             >
-              📄 Choose a .csv file…
+              <FileText size={13} className="inline align-[-2px]" /> Choose a .csv file…
             </button>
             <input
               ref={fileInput}
@@ -211,7 +212,7 @@ export function ImportCsvModal({
         {stage === "done" && result && (
           <div className="flex flex-col gap-3">
             <div className="rounded-lg bg-emerald-950/30 p-3 text-sm text-emerald-200">
-              ✓ Imported {result.cards.toLocaleString()} cards ({result.added.toLocaleString()}{" "}
+              <Check size={13} className="inline align-[-2px]" /> Imported {result.cards.toLocaleString()} cards ({result.added.toLocaleString()}{" "}
               stacks).
             </div>
 
@@ -253,7 +254,7 @@ export function ImportCsvModal({
                   onClick={onClose}
                   className="rounded-md border border-amber-700 bg-amber-950/40 px-4 py-1.5 text-xs font-bold text-amber-200 hover:bg-amber-950/70"
                 >
-                  🔎 Resolve {result.unresolvedIds} manually
+                  <Search size={12} className="inline align-[-2px]" /> Resolve {result.unresolvedIds} manually
                 </Link>
               )}
               <button

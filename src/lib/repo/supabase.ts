@@ -179,6 +179,7 @@ export class SupabaseRepo implements Repo {
       adds: DeckVersion["adds"];
       cuts: DeckVersion["cuts"];
       notes: string | null;
+      snapshot?: DeckVersion["snapshot"] | null;
     };
     const rows = await this.rest<Row[]>(
       `deck_versions?deck_id=eq.${encodeURIComponent(deckId)}&order=date.desc`,
@@ -191,23 +192,29 @@ export class SupabaseRepo implements Repo {
       adds: r.adds ?? [],
       cuts: r.cuts ?? [],
       notes: r.notes ?? undefined,
+      snapshot: r.snapshot ?? undefined,
     }));
   }
 
   async addVersion(version: DeckVersion): Promise<void> {
-    await this.rest("deck_versions", {
-      method: "POST",
-      body: JSON.stringify([
-        {
-          deck_id: version.deckId,
-          date: new Date(version.date).toISOString(),
-          title: version.title,
-          adds: version.adds,
-          cuts: version.cuts,
-          notes: version.notes ?? null,
-        },
-      ]),
-    });
+    const row = {
+      deck_id: version.deckId,
+      date: new Date(version.date).toISOString(),
+      title: version.title,
+      adds: version.adds,
+      cuts: version.cuts,
+      notes: version.notes ?? null,
+    };
+    try {
+      await this.rest("deck_versions", {
+        method: "POST",
+        body: JSON.stringify([{ ...row, snapshot: version.snapshot ?? null }]),
+      });
+    } catch {
+      // Older deployments lack the snapshot column (see supabase/schema.sql);
+      // keep the changelog working and just drop the snapshot.
+      await this.rest("deck_versions", { method: "POST", body: JSON.stringify([row]) });
+    }
   }
 
   async deleteVersion(_deckId: string, id: number | string): Promise<void> {

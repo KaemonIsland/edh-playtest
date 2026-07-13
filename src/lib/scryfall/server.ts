@@ -208,8 +208,11 @@ export async function fuzzyNamed(name: string): Promise<ScryCard | null> {
   return toScryCard(await res.json());
 }
 
-/** Name search (fallback when the local card DB isn't synced). Newest first. */
-export async function searchCardsByName(query: string): Promise<ScryCard[]> {
+/**
+ * Raw Scryfall search (name fallback, otag:/syntax queries). Newest first.
+ * `limit` is capped at one API page (175).
+ */
+export async function searchCardsByName(query: string, limit = 30): Promise<ScryCard[]> {
   const res = await throttled(() =>
     fetch(
       `${SCRYFALL}/cards/search?q=${encodeURIComponent(query)}&unique=cards&order=released&dir=desc`,
@@ -218,7 +221,7 @@ export async function searchCardsByName(query: string): Promise<ScryCard[]> {
   );
   if (!res.ok) return [];
   const data = (await res.json()) as { data: RawCard[] };
-  return data.data.slice(0, 30).map(toScryCard);
+  return data.data.slice(0, Math.min(Math.max(limit, 1), 175)).map(toScryCard);
 }
 
 /** Every printing of an oracle id (variation picker). */

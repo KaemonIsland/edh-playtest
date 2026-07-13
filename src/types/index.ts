@@ -71,6 +71,12 @@ export interface ScryCard {
 // Decks
 // ---------------------------------------------------------------------------
 
+/** A card benched behind a deck slot ("I might swap this in"). */
+export interface SwapRef {
+  oracleId: string;
+  name: string;
+}
+
 export interface DeckEntry {
   card: ScryCard;
   quantity: number;
@@ -78,6 +84,10 @@ export interface DeckEntry {
   categories: string[];
   /** Marked as a proxy in this deck (not a card you physically own). */
   proxy?: boolean;
+  /** Alternatives benched behind this slot (shown in the card modal's Swaps). */
+  swaps?: SwapRef[];
+  /** When the entry was added — powers the "New considering" list. */
+  addedAt?: number;
 }
 
 /** Categories that never count toward the deck (excluded by default). */
@@ -109,6 +119,10 @@ export interface Deck {
   commanders: ScryCard[];
   entries: DeckEntry[];
   colorIdentity: string[];
+  /** One-sentence thesis ("the pitch") shown in the builder header. */
+  pitch?: string;
+  /** Category targets for the skeleton panel, e.g. { Ramp: 10, Lands: 35 }. */
+  skeleton?: Record<string, number>;
   /** User-made tags for sorting/filtering the deck library. */
   tags?: string[];
   /** Settings per category name (only non-default entries stored). */
@@ -320,6 +334,35 @@ export function isCreature(typeLine: string): boolean {
 
 export function isLand(typeLine: string): boolean {
   return /\bLand\b/.test(typeLine);
+}
+
+/**
+ * Front-face type line for multi-face cards (MDFC, adventure, split, room,
+ * omen…). Deck counting classifies by the primary face, so a "Sorcery // Land"
+ * MDFC counts as a sorcery, and an adventure creature counts as a creature.
+ */
+export function frontTypeLine(card: ScryCard): string {
+  const face = card.card_faces?.[0]?.type_line;
+  if (face) return face;
+  return card.type_line.split(" // ")[0] ?? card.type_line;
+}
+
+/** Land by the card's front face (see frontTypeLine). */
+export function isFrontLand(card: ScryCard): boolean {
+  return isLand(frontTypeLine(card));
+}
+
+/**
+ * Any face is a land. MDFCs with a land back (Disciple of Freyalise // Garden
+ * of Freyalise) group under their front face but still count toward the land
+ * count — you can always play the land side.
+ */
+export function hasLandFace(card: ScryCard): boolean {
+  if (card.card_faces && card.card_faces.length > 0) {
+    return card.card_faces.some((f) => isLand(f.type_line ?? ""));
+  }
+  // No per-face data: a combined "Creature // Land" type line still matches.
+  return isLand(card.type_line);
 }
 
 /** The active face of a card given an instance's flipped index. */

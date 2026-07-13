@@ -1,5 +1,6 @@
 "use client";
 
+import { Bot, Heart, Hexagon, Mountain, PawPrint, Skull } from "lucide-react";
 import { useDroppable } from "@dnd-kit/core";
 import type { Zone } from "@/types";
 import { isLand } from "@/types";
@@ -130,9 +131,9 @@ function FieldSummary({ playerId }: { playerId: string }) {
   }
   return (
     <span className="flex shrink-0 items-center gap-2 rounded bg-stone-900 px-2 py-1 text-[10px] text-stone-400">
-      <span title="Lands on the battlefield">⛰ {lands}</span>
-      <span title="Nonland permanents">⬡ {nonlands}</span>
-      <span title="Creatures">🐾 {creatures}</span>
+      <span className="flex items-center gap-0.5" title="Lands on the battlefield"><Mountain size={11} /> {lands}</span>
+      <span className="flex items-center gap-0.5" title="Nonland permanents"><Hexagon size={11} /> {nonlands}</span>
+      <span className="flex items-center gap-0.5" title="Creatures"><PawPrint size={11} /> {creatures}</span>
     </span>
   );
 }
@@ -195,7 +196,7 @@ export function OpponentBoard({ side = false }: { side?: boolean }) {
           {collapsed ? "▸" : "▾"}
         </button>
         <span className="max-w-40 shrink-0 truncate text-xs font-bold text-rose-300/90" title={player.name}>
-          🤖 {player.name}
+          <Bot size={12} className="inline align-[-2px]" /> {player.name}
         </span>
         {g.activePlayerId === viewedId && (
           <span className="shrink-0 rounded-full bg-rose-700 px-2 py-0.5 text-[9px] font-bold text-white uppercase">
@@ -206,13 +207,13 @@ export function OpponentBoard({ side = false }: { side?: boolean }) {
         <span className="flex shrink-0 items-center gap-0.5 rounded bg-stone-900 px-1.5 py-0.5 text-xs">
           <button onClick={() => g.addLife(viewedId, -1)} className="px-1 text-stone-400 hover:text-white">−</button>
           <span className={`min-w-6 text-center font-bold ${player.life <= 10 ? "text-red-400" : "text-emerald-300"}`}>
-            ❤ {player.life}
+            <Heart size={11} className="inline align-[-1px]" /> {player.life}
           </span>
           <button onClick={() => g.addLife(viewedId, 1)} className="px-1 text-stone-400 hover:text-white">+</button>
         </span>
         <span className="flex shrink-0 items-center gap-0.5 rounded bg-stone-900 px-1.5 py-0.5 text-xs">
           <button onClick={() => g.addTracker(viewedId, "poison", -1)} className="px-1 text-stone-400 hover:text-white">−</button>
-          <span className="min-w-4 text-center font-bold text-fuchsia-300">☠ {player.poison}</span>
+          <span className="flex min-w-4 items-center justify-center gap-0.5 font-bold text-fuchsia-300"><Skull size={11} /> {player.poison}</span>
           <button onClick={() => g.addTracker(viewedId, "poison", 1)} className="px-1 text-stone-400 hover:text-white">+</button>
         </span>
 

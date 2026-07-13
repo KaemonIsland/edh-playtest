@@ -129,6 +129,9 @@ export interface SearchFilters {
   sets?: string[];
   /** Illustrator name (printing-level — forces a Scryfall lookup). */
   artist?: string;
+  /** Scryfall oracle tag (otag:) — tags live on Scryfall's side only, so this
+   * forces the Scryfall query path like `artist` does. */
+  otag?: string;
   /** Only cards that can be a commander. */
   commander?: boolean;
 }
@@ -159,6 +162,7 @@ function hasAnyFilter(f: SearchFilters): boolean {
       f.keyword?.trim() ||
       (f.sets && f.sets.length) ||
       f.artist?.trim() ||
+      f.otag?.trim() ||
       f.commander,
   );
 }
@@ -169,7 +173,8 @@ export async function advancedSearchCards(f: SearchFilters, limit = 120): Promis
 
   // The oracle DB is printing-agnostic, so artist (an illustrator credit that
   // varies per printing) can only be answered by Scryfall — fall through.
-  if (getCardDbStatus().syncedAt && !f.artist?.trim()) {
+  // Oracle tags also live only on Scryfall's side.
+  if (getCardDbStatus().syncedAt && !f.artist?.trim() && !f.otag?.trim()) {
     const name = f.name?.trim().toLowerCase();
     const typeTerms = f.type?.trim().toLowerCase().split(/\s+/).filter(Boolean) ?? [];
     const text = f.text?.trim().toLowerCase();
@@ -261,9 +266,12 @@ export async function advancedSearchCards(f: SearchFilters, limit = 120): Promis
   if (f.keyword?.trim()) parts.push(`keyword:${f.keyword.trim()}`);
   if (f.sets && f.sets.length) parts.push(`(${f.sets.map((s) => `s:${s.trim()}`).join(" or ")})`);
   if (f.artist?.trim()) parts.push(`a:"${f.artist.trim()}"`);
+  if (f.otag?.trim()) parts.push(`otag:${f.otag.trim().toLowerCase().replace(/\s+/g, "-")}`);
   if (f.commander) parts.push("is:commander");
   if (parts.length === 0) return [];
-  const res = await fetch(`/api/cards/search?q=${encodeURIComponent(parts.join(" "))}`);
+  const res = await fetch(
+    `/api/cards/search?q=${encodeURIComponent(parts.join(" "))}&limit=${limit}`,
+  );
   if (!res.ok) return [];
   const data = (await res.json()) as { cards: ScryCard[] };
   return data.cards;

@@ -1,5 +1,6 @@
 "use client";
 
+import { FolderOpen, Gamepad2, Library, Shuffle, Sparkles, WalletCards } from "lucide-react";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { ScryCard } from "@/types";
@@ -9,28 +10,28 @@ import { ManaCost } from "@/components/cards/ManaCost";
 const OPTIONS = [
   {
     href: "/collection",
-    emoji: "📚",
+    icon: Library,
     title: "Collection",
     blurb: "Browse, filter, and value everything you own — by set, color, type, and more.",
     accent: "hover:border-sky-600/60",
   },
   {
     href: "/cards",
-    emoji: "🃏",
+    icon: WalletCards,
     title: "All Cards",
     blurb: "Browse every set and add the cards you opened or bought to your collection.",
     accent: "hover:border-violet-600/60",
   },
   {
     href: "/decks",
-    emoji: "🗂️",
+    icon: FolderOpen,
     title: "Decks",
     blurb: "Build, showcase, and track your Commander decks with primers, stats, and game logs.",
     accent: "hover:border-emerald-600/60",
   },
   {
     href: "/import",
-    emoji: "🎮",
+    icon: Gamepad2,
     title: "Playtest",
     blurb: "Goldfish a deck on a real-feeling table — solo or against rules-based bot opponents.",
     accent: "hover:border-rose-600/60",
@@ -89,7 +90,7 @@ export default function HomePage() {
               href={o.href}
               className={`group flex flex-col rounded-2xl border border-stone-800 bg-stone-950/80 p-6 transition ${o.accent} hover:bg-stone-900/80`}
             >
-              <span className="text-4xl transition group-hover:scale-110">{o.emoji}</span>
+              <o.icon size={34} className="shrink-0 text-stone-300 transition group-hover:scale-110" />
               <span className="mt-3 text-xl font-bold">{o.title}</span>
               <span className="mt-1 text-xs leading-relaxed text-stone-500">{o.blurb}</span>
               <span className="mt-4 text-sm font-semibold text-stone-400 group-hover:text-stone-200">
@@ -102,7 +103,7 @@ export default function HomePage() {
         {/* Random commander showcase */}
         <div className="mt-10 flex flex-1 flex-col items-center justify-center">
           <div className="mb-3 text-[11px] font-bold tracking-wide text-stone-500 uppercase">
-            Commander of the moment ✨
+            Commander of the moment <Sparkles size={11} className="inline align-[-1px]" />
           </div>
           {showcase ? (
             <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
@@ -130,7 +131,7 @@ export default function HomePage() {
                   onClick={() => window.location.reload()}
                   className="mt-3 rounded-md border border-stone-700 bg-stone-900 px-3 py-1.5 text-xs font-semibold text-stone-300 hover:bg-stone-800"
                 >
-                  🔀 Show another
+                  <Shuffle size={13} className="inline align-[-2px]" /> Show another
                 </button>
               </div>
             </div>

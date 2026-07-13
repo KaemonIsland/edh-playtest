@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { useDraggable } from "@dnd-kit/core";
+import { Circle, Dices, X } from "lucide-react";
 import type { ScryCard, Zone } from "@/types";
 import { PLAYER_ID, useGameStore } from "@/lib/game/store";
 import { useUiStore, type MenuItem } from "@/lib/game/uiStore";
@@ -389,7 +390,7 @@ function TokensPile() {
                 onClick={() => setPickerOpen(false)}
                 className="rounded px-2 py-0.5 text-stone-500 hover:bg-stone-800 hover:text-stone-200"
               >
-                ✕
+                <X size={14} />
               </button>
             </div>
             <p className="mb-3 text-[11px] text-stone-500">
@@ -446,7 +447,7 @@ function CounterChip({
       title={`Drag “${def.label}” onto a card`}
       className="flex aspect-square cursor-grab flex-col items-center justify-center gap-0.5 rounded-md border border-stone-700 bg-stone-900 p-1 text-center hover:border-fuchsia-600/60 hover:bg-stone-800 active:cursor-grabbing"
     >
-      <span className="text-base leading-none">{def.icon}</span>
+      <def.icon size={16} className="text-stone-300" />
       <span className="w-full truncate text-[8px] leading-tight text-stone-400">{def.label}</span>
     </button>
   );
@@ -467,7 +468,7 @@ function DiceBag() {
 
   const onUsed = (name: string) => setRecent(pushRecentCounter(name));
   const byName = (name: string): CounterDef =>
-    COUNTER_TYPES.find((c) => c.name === name) ?? { name, label: name, icon: "⬤" };
+    COUNTER_TYPES.find((c) => c.name === name) ?? { name, label: name, icon: Circle };
 
   return (
     <div className="flex flex-col items-center gap-1 rounded-lg border border-fuchsia-900/40 bg-stone-900/60 p-2">
@@ -484,7 +485,7 @@ function DiceBag() {
             open ? "border-fuchsia-600/70" : "border-fuchsia-800/60"
           }`}
         >
-          🎲
+          <Dices size={26} className="text-fuchsia-300" />
         </div>
       </button>
 
@@ -500,7 +501,7 @@ function DiceBag() {
               onClick={() => setOpen(false)}
               className="rounded px-1.5 text-stone-500 hover:bg-stone-800 hover:text-stone-200"
             >
-              ✕
+              <X size={14} />
             </button>
           </div>
 

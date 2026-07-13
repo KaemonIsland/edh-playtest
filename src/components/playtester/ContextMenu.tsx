@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Trash2 } from "lucide-react";
 import { useUiStore, type MenuItem } from "@/lib/game/uiStore";
 
 const MENU_W = 230;
@@ -25,7 +26,7 @@ function MenuList({
       {items.map((item, i) => {
         if (item.separator) return <div key={i} className="my-1 border-t border-stone-800" />;
 
-        // Inline counter row: "+1/+1   − 3 +  🗑" — clicks keep the menu open.
+        // Inline counter row: "+1/+1   − 3 +  [remove]" — clicks keep the menu open.
         if (item.counter) {
           const c = item.counter;
           return (
@@ -57,7 +58,7 @@ function MenuList({
                 className="ml-1 flex h-6 w-6 items-center justify-center rounded text-stone-500 hover:bg-stone-700 hover:text-rose-400"
                 title={`Remove all ${item.label} counters`}
               >
-                🗑
+                <Trash2 size={13} />
               </button>
             </div>
           );
@@ -65,7 +66,9 @@ function MenuList({
 
         const row = (
           <>
-            <span className="w-5 text-center text-[11px] opacity-70">{item.icon ?? ""}</span>
+            <span className="flex w-5 justify-center opacity-70">
+              {item.icon ? <item.icon size={13} /> : null}
+            </span>
             <span className="flex-1">{item.label}</span>
             {item.hint && <span className="text-[10px] text-stone-500">{item.hint}</span>}
             {item.children && <span className="text-stone-500">▸</span>}

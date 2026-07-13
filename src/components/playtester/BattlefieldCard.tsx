@@ -1,5 +1,6 @@
 "use client";
 
+import { Moon } from "lucide-react";
 import { memo, useRef, useState } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { motion } from "framer-motion";
@@ -189,7 +190,7 @@ export const BattlefieldCard = memo(function BattlefieldCard({
             title="Summoning sick (entered this turn)"
             className="absolute -top-1.5 -left-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-amber-500 text-[9px] text-black"
           >
-            💤
+            <Moon size={10} />
           </span>
         )}
         {inst.isToken && (

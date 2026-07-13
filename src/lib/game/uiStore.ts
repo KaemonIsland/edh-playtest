@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import type { LucideIcon } from "lucide-react";
 import type { ScryCard, TokenSpec, Zone } from "@/types";
 
 export interface MenuItem {
@@ -11,12 +12,12 @@ export interface MenuItem {
   disabled?: boolean;
   /** Submenu items — rendered as a flyout ("Move to ▸"). */
   children?: MenuItem[];
-  /** Small leading icon (emoji / glyph). */
-  icon?: string;
+  /** Small leading icon. */
+  icon?: LucideIcon;
   /** Right-aligned hint, e.g. a keybind ("U"). */
   hint?: string;
   /**
-   * Inline counter row: label + [− count + 🗑]. Clicks keep the menu open;
+   * Inline counter row: label + [− count + remove]. Clicks keep the menu open;
    * callbacks should refresh the menu items themselves.
    */
   counter?: { count: number; onInc: () => void; onDec: () => void; onRemove: () => void };

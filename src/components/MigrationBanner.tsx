@@ -1,5 +1,6 @@
 "use client";
 
+import { Check } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   migrateLegacyData,
@@ -24,7 +25,7 @@ export function MigrationBanner() {
   if (done) {
     return (
       <div className="mb-4 rounded-lg border border-emerald-800/60 bg-emerald-950/30 px-4 py-2 text-xs text-emerald-200">
-        ✓ Imported your previous data into the local database.
+        <Check size={14} className="inline align-[-2px]" /> Imported your previous data into the local database.
       </div>
     );
   }

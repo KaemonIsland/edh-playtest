@@ -1,5 +1,6 @@
 "use client";
 
+import { X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { getRepo, type DeckVersion, type VersionChange } from "@/lib/repo";
 
@@ -143,7 +144,7 @@ export function ChangelogTimeline({ deckId }: { deckId: string }) {
                   className="text-[10px] text-stone-600 hover:text-rose-400"
                   title="Delete entry"
                 >
-                  ✕
+                  <X size={14} />
                 </button>
               </div>
             </div>

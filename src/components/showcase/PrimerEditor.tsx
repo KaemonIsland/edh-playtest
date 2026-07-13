@@ -1,5 +1,6 @@
 "use client";
 
+import { Pencil } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getRepo, PRIMER_SECTIONS, type Primer } from "@/lib/repo";
 import { Markdown } from "@/lib/markdown";
@@ -72,7 +73,7 @@ export function PrimerEditor({ deckId }: { deckId: string }) {
                   }}
                   className="text-[11px] text-stone-500 hover:text-stone-300"
                 >
-                  ✎ Edit
+                  <Pencil size={11} className="inline align-[-1px]" /> Edit
                 </button>
               )}
             </div>

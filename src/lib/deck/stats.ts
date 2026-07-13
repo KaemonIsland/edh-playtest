@@ -1,5 +1,12 @@
 import type { Deck, DeckEntry, RoleOverrides, ScryCard } from "@/types";
-import { includedEntries, isLand } from "@/types";
+import {
+  frontTypeLine,
+  hasLandFace,
+  includedEntries,
+  isBoardCategory,
+  isFrontLand,
+  isLand,
+} from "@/types";
 
 /**
  * Deck analysis heuristics. Card-role classification is text-based and
@@ -47,6 +54,33 @@ function oracle(card: ScryCard): string {
   );
 }
 
+/**
+ * Colors a card can produce. Scryfall's `produced_mana` when present;
+ * otherwise derived from basic land types and "Add {G}…" oracle text —
+ * MTGJSON-synced cards don't carry produced_mana, which left the
+ * pips-vs-sources bars empty.
+ */
+function producedManaOf(card: ScryCard): string[] {
+  if (card.produced_mana && card.produced_mana.length > 0) return card.produced_mana;
+  const out = new Set<string>();
+  const typeLines = [card.type_line, ...(card.card_faces?.map((f) => f.type_line ?? "") ?? [])]
+    .join(" ");
+  const BASICS: [string, string][] = [
+    ["Plains", "W"],
+    ["Island", "U"],
+    ["Swamp", "B"],
+    ["Mountain", "R"],
+    ["Forest", "G"],
+  ];
+  for (const [sub, c] of BASICS) if (typeLines.includes(sub)) out.add(c);
+  // Scan "Add …" clauses for mana symbols / "any color".
+  for (const m of oracle(card).matchAll(/\badds?\b[^.\n]*/gi)) {
+    for (const sym of m[0].matchAll(/\{([WUBRGC])\}/g)) out.add(sym[1]!);
+    if (/any (?:one )?color/i.test(m[0])) for (const c of ["W", "U", "B", "R", "G"]) out.add(c);
+  }
+  return [...out];
+}
+
 const RAMP_RE =
   /(\{t\}[^.]*add |adds? (?:\{[wubrgc\d]\})+|add (?:one|two|three) mana|search your library for (?:a|up to two|two)[^.]{0,40}land)/i;
 const DRAW_RE = /draw (a card|two|three|four|x|that many|cards equal)/i;
@@ -56,7 +90,7 @@ const TUTOR_RE = /search your library for a(?!n? ?(?:basic )?land)/i;
 
 function autoRolesOf(card: ScryCard): Record<Role, boolean> {
   const text = oracle(card);
-  if (isLand(card.type_line))
+  if (isFrontLand(card))
     return { ramp: false, draw: false, interaction: false, tutors: false };
   return {
     ramp: RAMP_RE.test(text) && card.cmc <= 4,
@@ -112,8 +146,10 @@ function guessBracket(args: {
 
 export function computeDeckStats(deck: Deck): DeckStats {
   const entries = includedEntries(deck).filter((e) => !e.isCommander);
-  const nonland = entries.filter((e) => !isLand(e.card.type_line));
-  const lands = entries.filter((e) => isLand(e.card.type_line));
+  // Curve/roles classify by front face (a "Sorcery // Land" MDFC is a spell you
+  // cast), but the land count includes any card with a land face — the back of
+  // an MDFC is always playable as a land.
+  const nonland = entries.filter((e) => !isFrontLand(e.card));
   const identity = new Set(
     (deck.colorIdentity.length > 0
       ? deck.colorIdentity
@@ -121,7 +157,9 @@ export function computeDeckStats(deck: Deck): DeckStats {
   );
 
   const cardCount = entries.reduce((n, e) => n + e.quantity, 0) + deck.commanders.length;
-  const landCount = lands.reduce((n, e) => n + e.quantity, 0);
+  const landCount = entries
+    .filter((e) => hasLandFace(e.card))
+    .reduce((n, e) => n + e.quantity, 0);
 
   // Mana curve (nonland), bucketed 0..6, 7+
   const curveBuckets = new Map<string, number>();
@@ -151,11 +189,11 @@ export function computeDeckStats(deck: Deck): DeckStats {
   const sourceTotals: Record<PipColor, number> = { W: 0, U: 0, B: 0, R: 0, G: 0 };
   const landSourceTotals: Record<PipColor, number> = { W: 0, U: 0, B: 0, R: 0, G: 0 };
   for (const e of entries) {
-    const produced = e.card.produced_mana ?? [];
+    const produced = producedManaOf(e.card);
     for (const c of PIP_COLORS) {
       if (inIdentity(c) && produced.includes(c)) {
         sourceTotals[c] += e.quantity;
-        if (isLand(e.card.type_line)) landSourceTotals[c] += e.quantity;
+        if (hasLandFace(e.card)) landSourceTotals[c] += e.quantity;
       }
     }
   }
@@ -291,10 +329,14 @@ export function computeOdds(deck: Deck): { categories: OddsRow[]; types: OddsRow
   const entries = includedEntries(deck).filter((e) => !e.isCommander);
   const deckSize = entries.reduce((n, e) => n + e.quantity, 0);
 
+  // Every category on a card counts — "≥1 Draw" includes cards whose premier
+  // column is elsewhere. Uncategorized cards fall back to their type group.
   const byCat = new Map<string, number>();
   for (const e of entries) {
-    const cat = e.categories[0] ?? typeGroup(e.card);
-    byCat.set(cat, (byCat.get(cat) ?? 0) + e.quantity);
+    const cats = e.categories.filter((c) => !isBoardCategory(c));
+    for (const cat of cats.length > 0 ? cats : [typeGroup(e.card)]) {
+      byCat.set(cat, (byCat.get(cat) ?? 0) + e.quantity);
+    }
   }
 
   const byType = new Map<string, number>();
@@ -320,7 +362,9 @@ export function computeOdds(deck: Deck): { categories: OddsRow[]; types: OddsRow
 // ---------------------------------------------------------------------------
 
 export function typeGroup(card: ScryCard): string {
-  const tl = card.type_line;
+  // Multi-face cards group by their front face (adventure = creature, MDFC
+  // spell//land = spell) — matches how they're played from hand.
+  const tl = frontTypeLine(card);
   if (isLand(tl)) return "Lands";
   if (/\bCreature\b/.test(tl)) return "Creatures";
   if (/\bPlaneswalker\b/.test(tl)) return "Planeswalkers";
@@ -373,4 +417,189 @@ export function groupEntries(deck: Deck): { group: string; entries: DeckEntry[];
       if (ib >= 0) return -1;
       return a.group.localeCompare(b.group);
     });
+}
+
+// ---------------------------------------------------------------------------
+// Builder lenses — different ways to lay the same deck out
+// ---------------------------------------------------------------------------
+
+/**
+ * "category" = one column per premier category (a card appears once).
+ * "category-all" = a card appears in every category it holds: solid in its
+ * premier column, ghosted everywhere else.
+ * "type" / "curve" / "color" regroup without touching category data.
+ */
+export type GroupLens = "category" | "category-all" | "type" | "curve" | "color";
+
+export interface LensEntry {
+  entry: DeckEntry;
+  /** Shown semi-transparent: the card's premier home is another column. */
+  ghost: boolean;
+  /** Ghosts carry their premier group name (shown as "· Draw"). */
+  home?: string;
+}
+
+export interface LensGroup {
+  group: string;
+  entries: LensEntry[];
+}
+
+const COLOR_GROUP_ORDER = [
+  "White", "Blue", "Black", "Red", "Green", "Multicolor", "Colorless", "Lands",
+];
+
+function colorGroup(card: ScryCard): string {
+  if (isFrontLand(card)) return "Lands";
+  const ci = card.color_identity;
+  if (ci.length === 0) return "Colorless";
+  if (ci.length > 1) return "Multicolor";
+  return { W: "White", U: "Blue", B: "Black", R: "Red", G: "Green" }[ci[0]!] ?? "Colorless";
+}
+
+function curveGroup(card: ScryCard): string {
+  if (isFrontLand(card)) return "Lands";
+  return card.cmc >= 7 ? "7+ drops" : `${Math.floor(card.cmc)} drops`;
+}
+
+function sortEntries(list: LensEntry[]): LensEntry[] {
+  return list.sort(
+    (a, b) =>
+      a.entry.card.cmc - b.entry.card.cmc || a.entry.card.name.localeCompare(b.entry.card.name),
+  );
+}
+
+/**
+ * Group the deck's *included* entries (commanders and excluded boards are the
+ * caller's job) through the chosen lens.
+ */
+export function groupEntriesByLens(deck: Deck, lens: GroupLens): LensGroup[] {
+  const settings = deck.categorySettings ?? {};
+  const included = deck.entries.filter((e) => {
+    if (e.isCommander) return false;
+    const cat = e.categories[0];
+    return !cat || settings[cat]?.inDeck !== false;
+  });
+
+  const groups = new Map<string, LensEntry[]>();
+  const push = (group: string, le: LensEntry) => {
+    const list = groups.get(group) ?? [];
+    list.push(le);
+    groups.set(group, list);
+  };
+
+  for (const e of included) {
+    const primary = e.categories[0] ?? typeGroup(e.card);
+    if (lens === "type") {
+      push(typeGroup(e.card), { entry: e, ghost: false });
+    } else if (lens === "curve") {
+      push(curveGroup(e.card), { entry: e, ghost: false });
+    } else if (lens === "color") {
+      push(colorGroup(e.card), { entry: e, ghost: false });
+    } else {
+      push(primary, { entry: e, ghost: false });
+      if (lens === "category-all") {
+        for (const cat of e.categories.slice(1)) {
+          // Board categories never receive ghosts — they live in the dock.
+          if (cat !== primary && !isBoardCategory(cat)) {
+            push(cat, { entry: e, ghost: true, home: primary });
+          }
+        }
+      }
+    }
+  }
+
+  const order =
+    lens === "color"
+      ? COLOR_GROUP_ORDER
+      : lens === "curve"
+        ? ["0 drops", "1 drops", "2 drops", "3 drops", "4 drops", "5 drops", "6 drops", "7+ drops", "Lands"]
+        : GROUP_ORDER;
+
+  return [...groups.entries()]
+    .map(([group, entries]) => ({ group, entries: sortEntries(entries) }))
+    .sort((a, b) => {
+      const ia = order.indexOf(a.group);
+      const ib = order.indexOf(b.group);
+      if (ia >= 0 && ib >= 0) return ia - ib;
+      if (ia >= 0) return 1;
+      if (ib >= 0) return -1;
+      return a.group.localeCompare(b.group);
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Skeleton — category targets vs. actual counts
+// ---------------------------------------------------------------------------
+
+/** Starting-point template; every deck can override per category. */
+export const DEFAULT_SKELETON: Record<string, number> = {
+  Lands: 35,
+  Ramp: 10,
+  Draw: 10,
+  Interaction: 10,
+  "Board Wipes": 3,
+  Protection: 3,
+  "Win Cons": 3,
+};
+
+export interface SkeletonRow {
+  name: string;
+  count: number;
+  target: number;
+  /** Count came from the auto role detector, not explicit categories. */
+  auto: boolean;
+}
+
+/** Explicit category → auto-detected role fallback when uncategorized. */
+const ROLE_FOR_CATEGORY: Record<string, Role> = {
+  ramp: "ramp",
+  draw: "draw",
+  "card draw": "draw",
+  interaction: "interaction",
+  removal: "interaction",
+  tutors: "tutors",
+};
+
+/**
+ * Every category on a card counts (not just its premier column), so Hydroid
+ * Krasis with [Draw, X Spells, Win Cons] adds one to all three rows. "Lands"
+ * counts by card type. When a targeted category has no cards categorized yet,
+ * the matching auto-detected role (if any) fills in, flagged `auto`.
+ */
+export function computeSkeleton(deck: Deck, stats: DeckStats): SkeletonRow[] {
+  const targets = deck.skeleton ?? DEFAULT_SKELETON;
+  const counts = new Map<string, number>();
+  for (const e of includedEntries(deck)) {
+    if (e.isCommander) continue;
+    for (const cat of e.categories) {
+      if (isBoardCategory(cat)) continue;
+      const key = cat.toLowerCase();
+      counts.set(key, (counts.get(key) ?? 0) + e.quantity);
+    }
+  }
+
+  return Object.entries(targets).map(([name, target]) => {
+    if (name.toLowerCase() === "lands") {
+      return { name, count: stats.landCount, target, auto: false };
+    }
+    const explicit = counts.get(name.toLowerCase()) ?? 0;
+    if (explicit === 0) {
+      const role = ROLE_FOR_CATEGORY[name.toLowerCase()];
+      if (role && stats.roles[role].length > 0) {
+        return { name, count: stats.roles[role].length, target, auto: true };
+      }
+    }
+    return { name, count: explicit, target, auto: false };
+  });
+}
+
+/** Cards per type group (included, non-commander) — the dock's type tally. */
+export function typeTally(deck: Deck): { type: string; count: number }[] {
+  const m = new Map<string, number>();
+  for (const e of includedEntries(deck)) {
+    if (e.isCommander) continue;
+    const t = typeGroup(e.card);
+    m.set(t, (m.get(t) ?? 0) + e.quantity);
+  }
+  return GROUP_ORDER.filter((t) => m.has(t)).map((t) => ({ type: t, count: m.get(t)! }));
 }

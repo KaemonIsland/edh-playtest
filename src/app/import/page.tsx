@@ -1,5 +1,6 @@
 "use client";
 
+import { Bot, Check, Save, Star, TriangleAlert, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Deck, ParsedDeckLine, ScryCard } from "@/types";
@@ -538,7 +539,7 @@ export default function ImportPage() {
                       <CardImage card={e.card} className="aspect-[5/7] w-full" />
                       {e.isCommander && (
                         <span className="absolute -top-1.5 -right-1.5 rounded-full bg-amber-400 px-1 text-[10px] font-bold text-black">
-                          ★
+                          <Star size={13} />
                         </span>
                       )}
                       {e.line.quantity > 1 && (
@@ -554,7 +555,7 @@ export default function ImportPage() {
             <div className="rounded-lg border border-rose-900/40 bg-stone-950 p-3">
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-xs font-bold tracking-wide text-rose-300/90 uppercase">
-                  🤖 Opponents (optional, up to 3)
+                  <Bot size={13} className="inline align-[-2px]" /> Opponents (optional, up to 3)
                 </span>
                 <button
                   onClick={addOpponent}
@@ -595,13 +596,13 @@ export default function ImportPage() {
                         </button>
                       ))}
                     </div>
-                    {slot.text && <span className="text-[10px] text-emerald-400">✓ deck loaded</span>}
+                    {slot.text && <span className="text-[10px] text-emerald-400"><Check size={11} className="inline align-[-1px]" /> deck loaded</span>}
                     <button
                       onClick={() => setOppSlots((prev) => prev.filter((_, j) => j !== i))}
                       className="ml-auto rounded px-1.5 text-stone-500 hover:bg-stone-800 hover:text-rose-400"
                       title="Remove this opponent"
                     >
-                      ✕
+                      <X size={14} />
                     </button>
                   </div>
 
@@ -662,7 +663,7 @@ export default function ImportPage() {
               <div className="max-h-40 overflow-y-auto rounded-lg border border-amber-900/50 bg-amber-950/10 p-3">
                 {parseWarnings.concat(warnings.map((w) => w.message)).map((w, i) => (
                   <div key={i} className="text-[11px] text-amber-400/90">
-                    ⚠ {w}
+                    <TriangleAlert size={11} className="inline align-[-1px]" /> {w}
                   </div>
                 ))}
               </div>
@@ -691,7 +692,7 @@ export default function ImportPage() {
                 disabled={entries.length === 0}
                 className="rounded-md border border-stone-700 bg-stone-900 px-4 py-2.5 text-sm font-semibold text-stone-300 hover:bg-stone-800 disabled:opacity-40"
               >
-                💾 Save to My Decks
+                <Save size={13} className="inline align-[-2px]" /> Save to My Decks
               </button>
               <button
                 onClick={() => setStage("input")}

@@ -1,5 +1,6 @@
 "use client";
 
+import { Backpack, Crown, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Deck, ScryCard } from "@/types";
 import {
@@ -14,6 +15,8 @@ import {
 import { TYPE_OPTIONS } from "@/lib/cards/cardTypes";
 import { collectionEntryId, getRepo, type CardFinish } from "@/lib/repo";
 import { adjustCollection } from "@/lib/cards/collection";
+import { OTAGS } from "@/lib/cards/otags";
+import { getSearchScope, setSearchScope, type SearchScope } from "@/lib/cards/smartSearch";
 import { loadPriceIndex, usePriceStore } from "@/lib/cards/pricing";
 import {
   emptyFilters,
@@ -66,12 +69,16 @@ function toSearchFilters(f: CardFilters, extra: ExtraFilters): SearchFilters {
 /** Full-screen card search with Scryfall-like advanced filters. */
 export function CardSearchModal({
   initialQuery,
+  initialOtag,
   onOpenCard,
   onClose,
   deck,
   update,
+  onScopeChange,
 }: {
   initialQuery: string;
+  /** Pre-filled oracle tag (from a suggestion chip). */
+  initialOtag?: string;
   /** Clicking a card opens its detail modal (where it can be added). */
   onOpenCard: (card: ScryCard) => void;
   onClose: () => void;
@@ -79,14 +86,24 @@ export function CardSearchModal({
    * this deck (via `update`) instead of to the collection. */
   deck?: Deck;
   update?: (fn: (d: Deck) => void) => void;
+  /** Keeps the builder toolbar's Collection/All toggle in sync. */
+  onScopeChange?: (scope: SearchScope) => void;
 }) {
   const deckMode = !!deck && !!update;
   const [filters, setFilters] = useState<CardFilters>(() => ({ ...emptyFilters(), name: initialQuery }));
   const [keyword, setKeyword] = useState("");
   const [sets, setSets] = useState<string[]>([]);
   const [artist, setArtist] = useState("");
+  const [otag, setOtag] = useState(initialOtag ?? "");
   const [advanced, setAdvanced] = useState(false);
-  const [ownedOnly, setOwnedOnly] = useState(false);
+  const [scope, setScope] = useState<SearchScope>(() => getSearchScope());
+  const ownedOnly = scope === "collection";
+
+  const changeScope = (s: SearchScope) => {
+    setScope(s);
+    setSearchScope(s);
+    onScopeChange?.(s);
+  };
   const [results, setResults] = useState<ScryCard[] | null>(null);
   const [shownCount, setShownCount] = useState(RESULTS_PAGE);
   const [searching, setSearching] = useState(false);
@@ -151,8 +168,15 @@ export function CardSearchModal({
           e.quantity = next;
         }
       } else if (delta > 0) {
-        // New entry adopts the clicked printing.
-        d.entries.push({ card, quantity: delta, isCommander: false, categories: [] });
+        // New entry adopts the clicked printing (Collection scope already
+        // surfaces the printing you own).
+        d.entries.push({
+          card,
+          quantity: delta,
+          isCommander: false,
+          categories: [],
+          addedAt: Date.now(),
+        });
       }
     });
   };
@@ -164,10 +188,36 @@ export function CardSearchModal({
       [key]: p[key].includes(value) ? p[key].filter((x) => x !== value) : [...p[key], value],
     }));
 
-  const run = useCallback(async () => {
+  const run = useCallback(async (otagOverride?: string) => {
+    const tag = (otagOverride ?? otag).trim();
     setSearching(true);
     setShownCount(RESULTS_PAGE);
     try {
+      if (tag) {
+        // Oracle tags live on Scryfall's side. Commander colors are applied
+        // by default in deck mode (unless colors were chosen explicitly), and
+        // Collection scope intersects the results with what you own.
+        const f = toSearchFilters(filters, { keyword, sets, artist });
+        f.otag = tag;
+        if (deckMode && (!f.colors || f.colors.length === 0) && deck!.colorIdentity.length > 0) {
+          f.colors = deck!.colorIdentity;
+          f.colorMode = "identity";
+        }
+        const base = await advancedSearchCards(f, 175);
+        if (ownedOnly) {
+          const collection = await getRepo().listCollection();
+          const byOracle = new Map<string, ScryCard>();
+          for (const c of collection) {
+            if (c.quantity > 0 && !byOracle.has(c.oracleId)) byOracle.set(c.oracleId, c.card);
+          }
+          setResults(
+            base.filter((c) => byOracle.has(c.oracle_id)).map((c) => byOracle.get(c.oracle_id) ?? c),
+          );
+        } else {
+          setResults(base);
+        }
+        return;
+      }
       if (ownedOnly) {
         // Browse the collection itself (works without the card DB synced).
         const collection = await getRepo().listCollection();
@@ -208,11 +258,11 @@ export function CardSearchModal({
     } finally {
       setSearching(false);
     }
-  }, [filters, keyword, sets, artist, ownedOnly]);
+  }, [filters, keyword, sets, artist, ownedOnly, otag, deckMode, deck]);
 
   // Run the initial query immediately.
   useEffect(() => {
-    if (initialQuery.trim()) void run();
+    if (initialQuery.trim() || initialOtag?.trim()) void run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -275,17 +325,26 @@ export function CardSearchModal({
             placeholder="Card name…"
             className="w-full rounded-md border border-stone-700 bg-stone-900 px-3 py-2 text-sm outline-none focus:border-emerald-600"
           />
-          <button
-            onClick={() => setOwnedOnly((v) => !v)}
-            className={`shrink-0 rounded-md px-3 py-2 text-xs font-semibold transition ${
-              ownedOnly
-                ? "bg-amber-700 text-white"
-                : "border border-stone-700 bg-stone-900 text-stone-300 hover:bg-stone-800"
-            }`}
-            title="Only show cards you own (from your collection)"
+          <div
+            className="flex shrink-0 gap-0.5 rounded-lg border border-stone-700 bg-stone-900 p-0.5"
+            title="Collection: search cards you own first. All cards: search everything."
           >
-            ★ Owned only
-          </button>
+            {(["collection", "all"] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => changeScope(s)}
+                className={`rounded-md px-2.5 py-1.5 text-xs font-semibold transition ${
+                  scope === s
+                    ? s === "collection"
+                      ? "bg-emerald-800 text-white"
+                      : "bg-stone-700 text-white"
+                    : "text-stone-400 hover:text-stone-200"
+                }`}
+              >
+                {s === "collection" ? <><Backpack size={12} className="inline align-[-2px]" /> Collection</> : "All cards"}
+              </button>
+            ))}
+          </div>
           <button
             onClick={() => void run()}
             disabled={searching}
@@ -294,8 +353,42 @@ export function CardSearchModal({
             {searching ? "Searching…" : "Search"}
           </button>
           <button onClick={onClose} className="shrink-0 rounded px-2 py-1 text-stone-500 hover:text-stone-200">
-            ✕
+            <X size={14} />
           </button>
+        </div>
+
+        {/* Oracle tags — Scryfall's community tagger, e.g. otag:ramp */}
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <span
+            className="text-[10px] font-bold tracking-wide text-stone-500 uppercase"
+            title="Scryfall oracle tags (community 'function' tags). Deck color identity is applied automatically."
+          >
+            Otag
+          </span>
+          <input
+            value={otag}
+            onChange={(e) => setOtag(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && void run()}
+            placeholder="e.g. copy…"
+            className="w-28 rounded-md border border-stone-700 bg-stone-900 px-2 py-1 text-xs outline-none focus:border-emerald-600"
+          />
+          {OTAGS.map((tag) => (
+            <button
+              key={tag}
+              onClick={() => {
+                const next = otag === tag ? "" : tag;
+                setOtag(next);
+                if (next) void run(next);
+              }}
+              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold transition ${
+                otag === tag
+                  ? "bg-emerald-700 text-white"
+                  : "bg-stone-900 text-stone-500 hover:text-stone-200"
+              }`}
+            >
+              {tag}
+            </button>
+          ))}
         </div>
 
         {/* Advanced options */}
@@ -306,13 +399,14 @@ export function CardSearchModal({
           >
             {advanced ? "▾" : "▸"} Advanced options
           </button>
-          {filtersActive(filters) || keyword || sets.length || artist ? (
+          {filtersActive(filters) || keyword || sets.length || artist || otag ? (
             <button
               onClick={() => {
                 setFilters(emptyFilters());
                 setKeyword("");
                 setSets([]);
                 setArtist("");
+                setOtag("");
               }}
               className="text-[11px] text-stone-500 hover:text-rose-400"
             >
@@ -425,7 +519,7 @@ export function CardSearchModal({
                   : "border border-stone-700 bg-stone-900 text-stone-300 hover:bg-stone-800"
               }`}
             >
-              👑 Can be commander
+              <Crown size={13} className="inline align-[-2px]" /> Can be commander
             </button>
             <div className="flex flex-wrap items-center gap-1">
               <span className="mr-1 text-[10px] font-bold tracking-wide text-stone-500 uppercase">Rarity</span>

@@ -150,6 +150,7 @@ export class PgRepo implements Repo {
       adds: DeckVersion["adds"];
       cuts: DeckVersion["cuts"];
       notes: string | null;
+      snapshot: DeckVersion["snapshot"] | null;
     }>(`select * from deck_versions where deck_id = $1 order by date desc`, [deckId]);
     return rows.map((r) => ({
       id: r.id,
@@ -159,14 +160,23 @@ export class PgRepo implements Repo {
       adds: r.adds ?? [],
       cuts: r.cuts ?? [],
       notes: r.notes ?? undefined,
+      snapshot: r.snapshot ?? undefined,
     }));
   }
 
   async addVersion(v: DeckVersion): Promise<void> {
     await query(
-      `insert into deck_versions (deck_id, date, title, adds, cuts, notes)
-       values ($1,$2,$3,$4,$5,$6)`,
-      [v.deckId, new Date(v.date).toISOString(), v.title, JSON.stringify(v.adds), JSON.stringify(v.cuts), v.notes ?? null],
+      `insert into deck_versions (deck_id, date, title, adds, cuts, notes, snapshot)
+       values ($1,$2,$3,$4,$5,$6,$7)`,
+      [
+        v.deckId,
+        new Date(v.date).toISOString(),
+        v.title,
+        JSON.stringify(v.adds),
+        JSON.stringify(v.cuts),
+        v.notes ?? null,
+        v.snapshot ? JSON.stringify(v.snapshot) : null,
+      ],
     );
   }
 

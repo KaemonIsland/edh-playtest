@@ -1,5 +1,6 @@
 "use client";
 
+import { Check, PartyPopper, Search } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import type { ScryCard } from "@/types";
@@ -93,7 +94,7 @@ export default function ResolveImportsPage() {
 
         {justResolved && (
           <div className="mb-4 rounded-lg bg-emerald-950/30 px-3 py-2 text-xs text-emerald-200">
-            ✓ Resolved “{justResolved.name}” → added <strong>{justResolved.into}</strong> to your
+            <Check size={13} className="inline align-[-2px]" /> Resolved “{justResolved.name}” → added <strong>{justResolved.into}</strong> to your
             collection.
           </div>
         )}
@@ -102,7 +103,7 @@ export default function ResolveImportsPage() {
           <p className="text-sm text-stone-600">Loading…</p>
         ) : rows.length === 0 ? (
           <div className="rounded-xl border border-dashed border-stone-800 p-10 text-center">
-            <p className="text-sm text-stone-400">Nothing to resolve 🎉</p>
+            <p className="flex items-center justify-center gap-1.5 text-sm text-stone-400">Nothing to resolve <PartyPopper size={15} /></p>
             <p className="mt-1 text-xs text-stone-600">
               Every imported card was matched. Unmatched rows from future CSV imports will show up
               here.
@@ -157,7 +158,7 @@ export default function ResolveImportsPage() {
                     disabled={busy}
                     className="rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-600 disabled:opacity-40"
                   >
-                    🔍 Find card
+                    <Search size={13} className="inline align-[-2px]" /> Find card
                   </button>
                   <button
                     onClick={() => void dismiss(row)}

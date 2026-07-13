@@ -1,5 +1,6 @@
 "use client";
 
+import { Settings } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { getRepo, type CollectionCard } from "@/lib/repo";
@@ -81,7 +82,7 @@ export default function CollectionPricePage() {
               title="Change price source in Settings"
               className="rounded-md border border-stone-700 bg-stone-900 px-2.5 py-1.5 text-xs font-semibold text-stone-300 hover:bg-stone-800"
             >
-              {PRICE_SOURCE_LABEL[priceSource]} ⚙
+              {PRICE_SOURCE_LABEL[priceSource]} <Settings size={11} className="inline align-[-1px]" />
             </Link>
           </div>
         </div>

@@ -1,5 +1,6 @@
 "use client";
 
+import { Bot } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useGameStore } from "@/lib/game/store";
 import { useBotStore } from "@/lib/game/botStore";
@@ -25,7 +26,7 @@ export function BotPrompt() {
           className="fixed top-14 left-1/2 z-[70] w-[min(520px,92vw)] -translate-x-1/2 rounded-xl border border-rose-700/60 bg-stone-950/97 p-3 shadow-2xl backdrop-blur"
         >
           <div className="flex items-start gap-3">
-            <span className="mt-0.5 text-lg">🤖</span>
+            <Bot size={18} className="mt-0.5 shrink-0" />
             <div className="min-w-0 flex-1">
               <div className="text-[10px] font-bold tracking-wide text-rose-400 uppercase">
                 Opponent needs you

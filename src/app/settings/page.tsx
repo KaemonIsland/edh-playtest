@@ -1,5 +1,6 @@
 "use client";
 
+import { Download, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getRepo, type CollectionCard } from "@/lib/repo";
 import {
@@ -147,13 +148,13 @@ export default function SettingsPage() {
                 onClick={() => setImportOpen(true)}
                 className="rounded-md bg-emerald-700 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-600"
               >
-                📥 Import CSV
+                <Download size={13} className="inline align-[-2px]" /> Import CSV
               </button>
               <button
                 onClick={() => void exportCollection()}
                 className="rounded-md border border-stone-700 bg-stone-900 px-4 py-2 text-xs font-semibold text-stone-300 hover:bg-stone-800"
               >
-                📤 Export CSV
+                <Upload size={13} className="inline align-[-2px]" /> Export CSV
               </button>
             </div>
           }
