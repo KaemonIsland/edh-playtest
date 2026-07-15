@@ -4,6 +4,11 @@ A local-first Magic: The Gathering / Commander (EDH) workshop: track your **coll
 showcase **decks** (primers, stats, changelogs, game logs), **playtest** solo or against rules-based
 bot opponents, and browse **all cards** by set to log what you open.
 
+The whole app is built around one loop: **discover cards you already own → build the deck →
+playtest it → take notes → update the list → know exactly what to change in paper.** It's
+desktop-only, dark-only, and collection-first — search defaults to what you own, and adding a card
+uses the printing in your binder, not the newest reprint.
+
 Card data, prices, and rulings come from [MTGJSON](https://mtgjson.com); card images come from
 [Scryfall](https://scryfall.com)'s CDN (reconstructed from each card's Scryfall id). Not affiliated
 with Wizards of the Coast. Unofficial Fan Content permitted under the WotC Fan Content Policy.
@@ -11,7 +16,93 @@ with Wizards of the Coast. Unofficial Fan Content permitted under the WotC Fan C
 ## Stack
 
 Next.js (App Router) · TypeScript · Tailwind CSS · Zustand · dnd-kit · Framer Motion · Dexie
-(IndexedDB).
+(IndexedDB) · Postgres (or Supabase).
+
+## Features
+
+### Deck builder (`/d/[id]/edit`)
+
+The centerpiece — a drag-and-drop workbench where click = card details, drag = move/categorize.
+
+- **Two-tier header** — deck name, color identity, a manual **bracket** select, price, a 100-card
+  **count ring**, and the deck's **pitch**: a one-sentence thesis that stays in view while you cut
+  and add. A status chip shows **Theorycraft** vs **In paper** (with a live count of card changes
+  not yet made physically).
+- **Collection-first search** — an omnibox that speaks Scryfall syntax (`otag:ramp`, `o:"draw a
+  card"`, `t:creature`, `cmc<=3`) with a Collection / All-cards scope toggle. Quick results are
+  **drag sources**: drop one on a category column to add it there. Keyboard: `/` focuses search,
+  `↑↓` pick, `↵` opens details, `⇧↵` quick-adds, `⌥↵` benches to Maybeboard.
+- **Categories, plural** — every card can hold multiple categories (Ramp, Draw, Win Con…). Drag
+  between columns to set the premier category; **Alt-drop adds a secondary** one. Shift-click
+  multi-selects so a whole package moves in one drag.
+- **Lenses & sorting** — group columns by Category, **Category (all)** (cards appear ghosted in
+  every category they hold), Type, Curve, Color, or **Rarity**; sort within stacks by mana value,
+  name, color, rarity (binder order: mythic→common, then WUBRG), or type. Stacks or text view.
+- **The dock** — always-visible side panel:
+  - **Skeleton**: editable category targets (35 lands, 10 draw…) with progress bars; counts every
+    category on a card; click a row to hunt candidates for that slot.
+  - **Stats**: mana curve, color pips vs. sources, price, and hypergeometric **opening-hand odds**.
+  - **History**: every saved snapshot — **restore** any version into the editor, **compare** any
+    two, take a snapshot on demand, and mark which version is **built in paper**.
+  - **Notes**: the deck's scratch pad (also editable mid-playtest).
+  - **Boards**: Maybeboard/Ideas pinned below, plus **New considering** — recent adds with images,
+    draggable straight into the deck.
+- **Suggestions** — two discovery engines: **Scryfall oracle tags** with combinable filters
+  ("creatures that ramp", "blue draw spells ≤3 mv"), and **EDHREC sorted by synergy** (commander-
+  specific tech first, not the same 20 staples every list runs). Both respect your collection scope
+  and commander identity. **Browse collection** opens everything you own in the commander's colors.
+- **Card detail modal** — quantity, commander toggle, categories, a printings grid (with an
+  owned-only filter — click a printing to make it the deck's copy, ideal for showcase art),
+  **Swaps** (bench alternatives behind a slot and swap them in later), In-decks usage, collection
+  records + wishlist, rulings, and oracle text with real mana symbols.
+- **Versions & branching** — "Save + snapshot" records a restorable version; **Clone** copies the
+  whole deck (list, pitch, notes, targets) to branch a new spin.
+
+### Paper-deck workflows
+
+- **Changes** — a dual **Take out / Put in** pull list comparing the current list against any
+  snapshot (defaults to the version marked as built). Card images in color order, click to check
+  off at the table, copy as text. Boards never count — they don't exist in paper.
+- **Build mode** — assembling a deck physically: every card gets a pull checkbox, a progress bar
+  tracks 0→100, pulled cards tuck into the back of their stacks (or hide entirely), and the deck
+  stays **fully editable** mid-build — a missing card becomes a real swap, no shadow copy to
+  maintain. Pull state persists per deck. Finish with **Mark as built…**
+- **Built-in-paper tracking** — a deck points at the exact version snapshot that's sleeved. Card
+  usage everywhere distinguishes **IN PAPER** (physically tied up) / **NOT IN BUILD** (in the list,
+  but the copy is free) / **THEORY** (just a list) so you know when to proxy vs. pull.
+
+### Collection (`/collection`) & All Cards (`/cards`)
+
+- Full-width browsing with the shared filter rail (name, text, color + any/exact/identity, types,
+  mana value, power/toughness, price range, rarity, commander-only) and canonical color sorting.
+- **CSV import** from Mana Flood, ManaBox, Moxfield, Archidekt, etc. — matches by MTGJSON UUID,
+  Scryfall id, set+collector, then name; unmatched rows land on a manual-resolution page.
+- Per-printing, per-finish quantities with debounced steppers; wishlist; collection value with a
+  TCGplayer / Card Kingdom price toggle; browse every set to log what you open.
+- A global **card size** control (Small→X-Large) in the header scales every card grid in the app.
+
+### Playtester (`/play`)
+
+- A real-feeling table: free battlefield placement (optional snap-to-grid), all zones, drag
+  anywhere, right-click context menus, undo/redo, customizable keybinds.
+- **Bot opponents** (up to 3) built from pasted lists or EDHREC average decks, with visible
+  reasoning for every play; stacked or side-by-side board layouts.
+- Library actions: draw/mill/scry/surveil, search, and **Reveal X** (send each revealed card to
+  hand/battlefield/graveyard/exile/top/bottom, shuffle the bottomed ones).
+- Deck tokens auto-detected from Scryfall; a counters **Dice Bag** (drag counters onto cards),
+  dice & coins, phase stepper, commander tax tracking, mulligans with London bottoming.
+- **Notes scratch pad** — jot "underperformed / try X instead" mid-game; it saves onto the deck
+  and shows up in the builder's Notes tab.
+- Right-click any card → **Card details** for rulings, wishlist, and readable text (secret lair
+  art, we love you, but what does the card *do*).
+- Save/restore full game snapshots, log finished games (W/L, pod, turns) onto the deck's showcase,
+  collapsible hand, optional hover preview, card sizes matching the rest of the app.
+
+### Deck showcase (`/d/[id]`)
+
+Public-facing deck page: decklist, primer sections (strategy, combos, mulligans, matchups, budget),
+stats panel, changelog timeline, game log with win rates, collection coverage ("you own 87/99"),
+and share/export tools.
 
 ## Set up locally
 
