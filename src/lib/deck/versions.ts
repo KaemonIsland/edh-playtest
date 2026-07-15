@@ -46,6 +46,49 @@ export function diffSnapshots(
   return { adds, cuts };
 }
 
+/** One line of a physical-changes list. `card` resolves lazily for display. */
+export interface ChangeLine {
+  name: string;
+  qty: number;
+}
+
+const BOARD_NAMES = new Set(["Sideboard", "Maybeboard", "Ideas"]);
+
+/** Entries that exist physically in the built deck (boards excluded). */
+export function physicalEntries(snapshot: VersionSnapshotEntry[]): VersionSnapshotEntry[] {
+  return snapshot.filter((e) => !e.categories?.[0] || !BOARD_NAMES.has(e.categories[0]));
+}
+
+/**
+ * Quantity-aware diff for the physical-changes view: which cards to pull out
+ * of the sleeves and which to put in, comparing a baseline snapshot (the deck
+ * as last physically built) against the current list. Boards don't exist in
+ * paper and are ignored on both sides.
+ */
+export function diffSnapshotsDetailed(
+  baseline: VersionSnapshotEntry[],
+  current: VersionSnapshotEntry[],
+): { adds: ChangeLine[]; cuts: ChangeLine[] } {
+  const count = (list: VersionSnapshotEntry[]) => {
+    const m = new Map<string, number>();
+    for (const e of physicalEntries(list)) m.set(e.name, (m.get(e.name) ?? 0) + e.qty);
+    return m;
+  };
+  const a = count(baseline);
+  const b = count(current);
+  const adds: ChangeLine[] = [];
+  const cuts: ChangeLine[] = [];
+  for (const [name, qty] of b) {
+    const prev = a.get(name) ?? 0;
+    if (qty > prev) adds.push({ name, qty: qty - prev });
+  }
+  for (const [name, qty] of a) {
+    const next = b.get(name) ?? 0;
+    if (next < qty) cuts.push({ name, qty: qty - next });
+  }
+  return { adds, cuts };
+}
+
 export interface RestoreResult {
   deck: Deck;
   /** Names that couldn't be resolved to a card (kept out of the deck). */

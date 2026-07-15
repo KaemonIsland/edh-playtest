@@ -1,6 +1,6 @@
 "use client";
 
-import { Backpack, Layers, Lightbulb, List, Play, Search, X } from "lucide-react";
+import { Backpack, CopyPlus, GitCompareArrows, Hammer, Layers, Lightbulb, List, Play, RotateCcw, Search, X } from "lucide-react";
 import {
   Fragment,
   use,
@@ -33,8 +33,10 @@ import {
   typeGroup,
   type GroupLens,
   type LensEntry,
+  type StackSort,
 } from "@/lib/deck/stats";
-import { snapshotOf } from "@/lib/deck/versions";
+import { diffSnapshotsDetailed, snapshotOf } from "@/lib/deck/versions";
+import type { DeckVersion } from "@/lib/repo";
 import { getCardDbStatus } from "@/lib/cards/carddb";
 import { ownedOracleIds } from "@/lib/cards/collection";
 import {
@@ -45,6 +47,7 @@ import {
   type SearchScope,
 } from "@/lib/cards/smartSearch";
 import { saveBotDecks, saveCurrentDeck } from "@/lib/deck/storage";
+import { uid } from "@/lib/game/ids";
 import { useGameStore } from "@/lib/game/store";
 import { CardImage } from "@/components/cards/CardImage";
 import { ManaCost } from "@/components/cards/ManaCost";
@@ -53,6 +56,7 @@ import { CardDetailModal } from "@/components/builder/CardDetailModal";
 import { DeckDock } from "@/components/builder/DeckDock";
 import { CardRow, DropHint } from "@/components/builder/CardRows";
 import { SuggestionsModal } from "@/components/builder/SuggestionsModal";
+import { ChangesModal } from "@/components/builder/ChangesModal";
 import { ModalShell } from "@/components/ui/ModalShell";
 import { useCardMinPx } from "@/components/ui/CardSizeSelect";
 import { Seg } from "@/components/ui/Seg";
@@ -61,6 +65,7 @@ import { CATEGORY_OTAG } from "@/lib/cards/otags";
 type ViewMode = "stacks" | "text";
 const VIEW_KEY = "edh-playtest:builder-view";
 const LENS_KEY = "edh-playtest:builder-lens";
+const STACK_SORT_KEY = "edh-playtest:builder-stack-sort";
 const COMMANDER_DROP = "cat:__commander__";
 /** Lenses whose columns are category drop targets. */
 const DROPPABLE_LENSES: GroupLens[] = ["category", "category-all"];
@@ -71,6 +76,15 @@ const LENS_LABEL: Record<GroupLens, string> = {
   type: "Type",
   curve: "Curve",
   color: "Color",
+  rarity: "Rarity",
+};
+
+const STACK_SORT_LABEL: Record<StackSort, string> = {
+  cmc: "Mana value",
+  name: "Name",
+  color: "Color",
+  rarity: "Rarity",
+  type: "Type",
 };
 
 /** Diff two decks by card name for the auto changelog entry. */
@@ -110,6 +124,7 @@ function CategoryColumn({
   onOpen,
   onToggleSelect,
   onToggleSetting,
+  pull,
 }: {
   name: string;
   /** `cat:X` = real drop target; `noop:X` = display-only (type/curve/color lens). */
@@ -124,12 +139,26 @@ function CategoryColumn({
   /** Alt is held during the drag — dropping adds a category instead of moving. */
   altHeld?: boolean;
   selection: Set<string>;
+  /** Build mode: pulled-state lookup/toggle; hideDone filters checked cards. */
+  pull?: { has: (oracleId: string) => boolean; toggle: (oracleId: string) => void; hideDone: boolean };
   onOpen: (card: ScryCard) => void;
   onToggleSelect: (cardId: string) => void;
   onToggleSetting?: (key: keyof CategorySetting) => void;
 }) {
   const droppable = dropId.startsWith("cat:");
   const { setNodeRef, isOver } = useDroppable({ id: dropId, disabled: !droppable });
+  // Build mode: hide pulled cards entirely, or tuck them into the back of the
+  // stack (rendered first = the mostly-hidden slivers at the top) so what's
+  // left to pull stays front and fully visible. Stable sort keeps the lens
+  // ordering within each half.
+  const shown = pull?.hideDone
+    ? entries.filter((e) => !pull.has(e.entry.card.oracle_id))
+    : pull
+      ? [...entries].sort(
+          (a, b) =>
+            Number(pull.has(b.entry.card.oracle_id)) - Number(pull.has(a.entry.card.oracle_id)),
+        )
+      : entries;
   const solid = entries.filter((e) => !e.ghost);
   const ghosts = entries.length - solid.length;
   const count = solid.reduce((n, e) => n + e.entry.quantity, 0);
@@ -218,18 +247,20 @@ function CategoryColumn({
       </div>
 
       <div className={`flex min-h-8 flex-col ${viewMode === "text" ? "gap-0.5" : ""}`}>
-        {entries.map((le) => (
+        {shown.map((le) => (
           <CardRow
             key={`${le.ghost ? "g:" : ""}${le.entry.card.id}`}
             view={viewMode}
             le={le}
             owned={ownedIds.has(le.entry.card.oracle_id)}
             selected={selection.has(le.entry.card.id) && !le.ghost}
+            checked={pull ? pull.has(le.entry.card.oracle_id) : undefined}
+            onToggleCheck={pull ? () => pull.toggle(le.entry.card.oracle_id) : undefined}
             onOpen={onOpen}
             onToggleSelect={onToggleSelect}
           />
         ))}
-        {entries.length === 0 && <DropHint />}
+        {shown.length === 0 && <DropHint />}
       </div>
     </div>
   );
@@ -279,6 +310,7 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
   const [detailCard, setDetailCard] = useState<ScryCard | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("stacks");
   const [lens, setLens] = useState<GroupLens>("category");
+  const [stackSort, setStackSort] = useState<StackSort>("cmc");
   const [scope, setScope] = useState<SearchScope>("collection");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ScryCard[]>([]);
@@ -286,7 +318,16 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
   const [searchModal, setSearchModal] = useState<string | null>(null);
   const [suggest, setSuggest] = useState<{ otag?: string; category?: string } | null>(null);
   const [browseOpen, setBrowseOpen] = useState(false);
+  const [changesOpen, setChangesOpen] = useState(false);
+  // Build mode: check cards off as you pull them physically. The deck stays
+  // fully editable, so mid-build swaps are real deck changes — no copy needed.
+  const [buildMode, setBuildMode] = useState(false);
+  const [pulled, setPulled] = useState<Set<string>>(new Set());
+  const [hidePulled, setHidePulled] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
+  const [markBuilt, setMarkBuilt] = useState(false);
+  // The version marked as physically built (for the header chip + Changes).
+  const [builtVersion, setBuiltVersion] = useState<DeckVersion | null>(null);
   const [saveTitle, setSaveTitle] = useState("");
   const [saving, setSaving] = useState(false);
   const [dragCard, setDragCard] = useState<ScryCard | null>(null);
@@ -330,6 +371,8 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
       if (savedView === "text" || savedView === "stacks") setViewMode(savedView);
       const savedLens = window.localStorage.getItem(LENS_KEY) as GroupLens | null;
       if (savedLens && savedLens in LENS_LABEL) setLens(savedLens);
+      const savedSort = window.localStorage.getItem(STACK_SORT_KEY) as StackSort | null;
+      if (savedSort && savedSort in STACK_SORT_LABEL) setStackSort(savedSort);
     } catch {
       // ignore
     }
@@ -345,6 +388,63 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
           setDraft(null);
         }
       });
+    try {
+      const rawPulled = window.localStorage.getItem(`edh-playtest:pull:${id}`);
+      if (rawPulled) setPulled(new Set(JSON.parse(rawPulled) as string[]));
+    } catch {
+      // ignore
+    }
+  }, [id]);
+
+  useEffect(() => {
+    const builtId = draft?.builtVersionId;
+    if (builtId == null) {
+      setBuiltVersion(null);
+      return;
+    }
+    let cancelled = false;
+    void getRepo()
+      .listVersions(id)
+      .then((versions) => {
+        if (cancelled) return;
+        setBuiltVersion(versions.find((v) => String(v.id) === String(builtId)) ?? null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [draft?.builtVersionId, id]);
+
+  // Cards drifted between the built snapshot and the current list.
+  const pendingBuildChanges = useMemo(() => {
+    if (!draft || !builtVersion?.snapshot) return null;
+    const { adds, cuts } = diffSnapshotsDetailed(builtVersion.snapshot, snapshotOf(draft));
+    return adds.length + cuts.length;
+  }, [draft, builtVersion]);
+
+  const togglePulled = useCallback(
+    (oracleId: string) => {
+      setPulled((prev) => {
+        const next = new Set(prev);
+        if (next.has(oracleId)) next.delete(oracleId);
+        else next.add(oracleId);
+        try {
+          window.localStorage.setItem(`edh-playtest:pull:${id}`, JSON.stringify([...next]));
+        } catch {
+          // ignore
+        }
+        return next;
+      });
+    },
+    [id],
+  );
+
+  const resetPulled = useCallback(() => {
+    setPulled(new Set());
+    try {
+      window.localStorage.removeItem(`edh-playtest:pull:${id}`);
+    } catch {
+      // ignore
+    }
   }, [id]);
 
   const setView = (mode: ViewMode) => {
@@ -365,6 +465,15 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
     }
   };
 
+  const setStackSortPersist = (v: StackSort) => {
+    setStackSort(v);
+    try {
+      window.localStorage.setItem(STACK_SORT_KEY, v);
+    } catch {
+      // ignore
+    }
+  };
+
   const changeScope = (s: SearchScope) => {
     setScope(s);
     setSearchScope(s);
@@ -378,7 +487,10 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
   );
 
   const stats = useMemo(() => (draft ? computeDeckStats(draft) : null), [draft]);
-  const lensGroups = useMemo(() => (draft ? groupEntriesByLens(draft, lens) : []), [draft, lens]);
+  const lensGroups = useMemo(
+    () => (draft ? groupEntriesByLens(draft, lens, stackSort) : []),
+    [draft, lens, stackSort],
+  );
 
   const commanderEntries = useMemo(
     () => draft?.entries.filter((e) => e.isCommander) ?? [],
@@ -391,6 +503,18 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
       draft.commanders.length
     );
   }, [draft]);
+
+  // Build-mode progress: physical cards = included entries (commander incl.).
+  const pullProgress = useMemo(() => {
+    if (!draft) return { pulled: 0, total: 0 };
+    let total = 0;
+    let done = 0;
+    for (const e of includedEntries(draft)) {
+      total += e.quantity;
+      if (pulled.has(e.card.oracle_id)) done += e.quantity;
+    }
+    return { pulled: done, total };
+  }, [draft, pulled]);
 
   const update = (fn: (d: Deck) => void) => {
     setDraft((prev) => {
@@ -514,7 +638,9 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
       setDragCard(card ?? null);
       return;
     }
-    const entry = draft.entries.find((x) => x.card.id === activeId);
+    // "new:<cardId>" = the dock's New Considering copy of a board entry.
+    const cardId = activeId.startsWith("new:") ? activeId.slice(4) : activeId;
+    const entry = draft.entries.find((x) => x.card.id === cardId);
     setDragCard(entry?.card ?? null);
   };
 
@@ -524,14 +650,17 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
     setAltHeld(false);
     const overId = e.over?.id ? String(e.over.id) : null;
     if (!overId?.startsWith("cat:")) return;
-    const activeId = String(e.active.id);
+    const rawId = String(e.active.id);
 
     // From the quick-search dropdown: add the card where it was dropped.
-    if (activeId.startsWith("search:")) {
-      const card = resultsRef.current.find((c) => `search:${c.id}` === activeId);
+    if (rawId.startsWith("search:")) {
+      const card = resultsRef.current.find((c) => `search:${c.id}` === rawId);
       if (card) void addFromSearch(card, overId);
       return;
     }
+    // New Considering rows drag with a "new:" prefix (same entry also renders
+    // in its board section) — both move the underlying entry.
+    const activeId = rawId.startsWith("new:") ? rawId.slice(4) : rawId;
 
     // Multi-select: dragging a selected card moves the whole selection.
     const ids = selection.has(activeId) && overId !== COMMANDER_DROP ? [...selection] : [activeId];
@@ -613,29 +742,58 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
     router.push("/play");
   };
 
-  const save = async (withChangelog: boolean) => {
+  const save = async (withSnapshot: boolean) => {
     if (!draft || !original) return;
     setSaving(true);
     try {
       const repo = getRepo();
-      await repo.saveDeck(draft);
-      if (withChangelog) {
+      let toSave = draft;
+      if (withSnapshot) {
+        // Always record the version — an unchanged list is still a snapshot
+        // you can restore or diff against later.
         const { adds, cuts } = diffDecks(original, draft);
-        if (adds.length > 0 || cuts.length > 0 || saveTitle.trim()) {
-          await repo.addVersion({
-            deckId: draft.id,
-            date: Date.now(),
-            title: saveTitle.trim() || `Update — ${new Date().toLocaleDateString()}`,
-            adds,
-            cuts,
-            snapshot: snapshotOf(draft),
-          });
+        await repo.addVersion({
+          deckId: draft.id,
+          date: Date.now(),
+          title: saveTitle.trim() || `Update — ${new Date().toLocaleDateString()}`,
+          adds,
+          cuts,
+          snapshot: snapshotOf(draft),
+        });
+        if (markBuilt) {
+          // addVersion doesn't return the id — the newest version is ours.
+          const versions = await repo.listVersions(draft.id);
+          const newest = versions[0];
+          if (newest?.id != null) toSave = { ...draft, builtVersionId: newest.id };
         }
       }
-      router.push(`/d/${draft.id}`);
+      await repo.saveDeck(toSave);
+      // Stay in the editor: the saved state becomes the new baseline.
+      setDraft(toSave);
+      setOriginal(structuredClone(toSave));
+      setSaveOpen(false);
+      setSaveTitle("");
+      setMarkBuilt(false);
+      setDockNote(
+        withSnapshot
+          ? markBuilt
+            ? "Saved — this snapshot is now marked as built in paper."
+            : "Saved — snapshot recorded."
+          : "Saved.",
+      );
     } finally {
       setSaving(false);
     }
+  };
+
+  /** Branch off: clone the deck (list, pitch, notes, skeleton) under a new id. */
+  const cloneDeck = async () => {
+    if (!draft) return;
+    const name = window.prompt("Name for the cloned deck:", `${draft.name} (copy)`);
+    if (!name?.trim()) return;
+    const copy: Deck = { ...structuredClone(draft), id: uid("deck"), name: name.trim() };
+    await getRepo().saveDeck(copy);
+    router.push(`/d/${copy.id}/edit`);
   };
 
   const onOmniboxKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -696,6 +854,9 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
           altHeld={altHeld}
           selection={selection}
           accent="commander"
+          pull={buildMode
+            ? { has: (o: string) => pulled.has(o), toggle: togglePulled, hideDone: hidePulled }
+            : undefined}
           onOpen={(c) => void openCard(c)}
           onToggleSelect={toggleSelect}
         />
@@ -717,6 +878,9 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
           dragging={dragCard !== null}
           altHeld={altHeld}
           selection={selection}
+          pull={buildMode
+            ? { has: (o: string) => pulled.has(o), toggle: togglePulled, hideDone: hidePulled }
+            : undefined}
           onOpen={(c) => void openCard(c)}
           onToggleSelect={toggleSelect}
           onToggleSetting={
@@ -795,6 +959,29 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
                   ${stats.priceUsd.toFixed(0)}
                 </span>
               )}
+              {draft.builtVersionId != null ? (
+                <button
+                  onClick={() => setChangesOpen(true)}
+                  className="rounded-full border border-amber-800/60 bg-amber-950/30 px-2 py-0.5 font-mono text-[10px] font-semibold text-amber-300 hover:bg-amber-900/40"
+                  title={
+                    builtVersion
+                      ? `Built in paper as “${builtVersion.title}” (${new Date(builtVersion.date).toLocaleDateString()})${
+                          pendingBuildChanges ? ` — ${pendingBuildChanges} card change(s) not yet made physically. Click for the pull list.` : " — the paper deck matches this list."
+                        }`
+                      : "Marked as built, but the version couldn't be found"
+                  }
+                >
+                  <Hammer size={10} className="inline align-[-1px]" /> In paper
+                  {pendingBuildChanges ? ` · ${pendingBuildChanges} pending` : " ✓"}
+                </button>
+              ) : (
+                <span
+                  className="rounded-full border border-stone-800 bg-stone-950 px-2 py-0.5 font-mono text-[10px] text-stone-500"
+                  title="Not built in paper yet — mark a version as built from the History tab, or tick “built in paper” when saving a snapshot"
+                >
+                  Theorycraft
+                </span>
+              )}
             </div>
             <div className="mt-0.5 flex items-center gap-1.5">
               <span className="shrink-0 font-bold text-emerald-600">“</span>
@@ -853,6 +1040,13 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
               title="Playtest the current deck (includes unsaved changes)"
             >
               <Play size={12} className="inline align-[-2px]" /> Playtest
+            </button>
+            <button
+              onClick={() => void cloneDeck()}
+              className="rounded-md border border-violet-800/50 bg-violet-950/20 px-2.5 py-1.5 text-xs font-semibold text-violet-200 hover:bg-violet-900/30"
+              title="Clone this deck (including unsaved edits) to branch off a new spin"
+            >
+              <CopyPlus size={13} className="inline align-[-2px]" /> Clone
             </button>
             <button
               onClick={() => {
@@ -970,23 +1164,56 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
           >
             <Backpack size={13} className="inline align-[-2px]" /> Browse collection
           </button>
+          <button
+            onClick={() => setChangesOpen(true)}
+            className="rounded-md border border-sky-800/50 bg-sky-950/20 px-3 py-1.5 text-xs font-semibold text-sky-200 hover:bg-sky-900/30"
+            title="What to take out and put in — vs. the version you last built physically"
+          >
+            <GitCompareArrows size={13} className="inline align-[-2px]" /> Changes
+          </button>
+          <button
+            onClick={() => setBuildMode((v) => !v)}
+            className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition ${
+              buildMode
+                ? "border-emerald-500 bg-emerald-700 text-white"
+                : "border-stone-700 bg-stone-900 text-stone-300 hover:bg-stone-800"
+            }`}
+            title="Build the deck in paper: check cards off as you pull them — the deck stays editable"
+          >
+            <Hammer size={13} className="inline align-[-2px]" /> Build
+          </button>
 
-          {/* Group lens */}
+          {/* Group + stack sort */}
           <span className="ml-1 font-mono text-[9px] tracking-widest text-stone-600 uppercase">
             Group
           </span>
-          <Seg
+          <select
             value={lens}
-            onChange={setLensPersist}
-            options={(Object.keys(LENS_LABEL) as GroupLens[]).map((l) => ({
-              value: l,
-              label: LENS_LABEL[l],
-              title:
-                l === "category-all"
-                  ? "Show cards in every category they hold — ghosted outside their premier column"
-                  : undefined,
-            }))}
-          />
+            onChange={(e) => setLensPersist(e.target.value as GroupLens)}
+            title="How columns are grouped — Category (all) shows cards everywhere they're mentioned, ghosted outside their premier column"
+            className="rounded-md border border-stone-700 bg-stone-900 px-1.5 py-1 text-[11px] outline-none focus:border-emerald-600"
+          >
+            {(Object.keys(LENS_LABEL) as GroupLens[]).map((l) => (
+              <option key={l} value={l}>
+                {LENS_LABEL[l]}
+              </option>
+            ))}
+          </select>
+          <span className="font-mono text-[9px] tracking-widest text-stone-600 uppercase">
+            Sort
+          </span>
+          <select
+            value={stackSort}
+            onChange={(e) => setStackSortPersist(e.target.value as StackSort)}
+            title="Ordering inside each stack — Rarity sorts mythic/rare first, then color (binder order)"
+            className="rounded-md border border-stone-700 bg-stone-900 px-1.5 py-1 text-[11px] outline-none focus:border-emerald-600"
+          >
+            {(Object.keys(STACK_SORT_LABEL) as StackSort[]).map((v) => (
+              <option key={v} value={v}>
+                {STACK_SORT_LABEL[v]}
+              </option>
+            ))}
+          </select>
 
           {/* View toggle */}
           <span className="font-mono text-[9px] tracking-widest text-stone-600 uppercase">
@@ -1024,6 +1251,60 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
             </span>
           )}
         </div>
+
+        {/* Build-mode banner: pull progress + filters. */}
+        {buildMode && (
+          <div className="flex flex-wrap items-center gap-3 border-b border-emerald-900/50 bg-emerald-950/20 px-3 py-1.5">
+            <span className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-300">
+              <Hammer size={12} />
+              Building in paper
+            </span>
+            <div className="flex min-w-48 flex-1 items-center gap-2">
+              <div className="h-1.5 min-w-32 flex-1 overflow-hidden rounded-full bg-stone-800">
+                <div
+                  className="h-full rounded-full bg-emerald-500 transition-all"
+                  style={{
+                    width: `${pullProgress.total > 0 ? (pullProgress.pulled / pullProgress.total) * 100 : 0}%`,
+                  }}
+                />
+              </div>
+              <span className="font-mono text-[11px] text-emerald-300 tabular-nums">
+                {pullProgress.pulled}/{pullProgress.total} pulled
+              </span>
+            </div>
+            <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-stone-300">
+              <input
+                type="checkbox"
+                checked={hidePulled}
+                onChange={(e) => setHidePulled(e.target.checked)}
+                className="accent-emerald-600"
+              />
+              Show remaining only
+            </label>
+            <button
+              onClick={resetPulled}
+              disabled={pulled.size === 0}
+              className="rounded-md border border-stone-700 bg-stone-900 px-2 py-1 text-[11px] font-semibold text-stone-300 hover:bg-stone-800 disabled:opacity-40"
+              title="Un-check everything"
+            >
+              <RotateCcw size={11} className="inline align-[-1px]" /> Reset
+            </button>
+            <button
+              onClick={() => {
+                setSaveTitle(`Built — ${new Date().toLocaleDateString()}`);
+                setMarkBuilt(true);
+                setSaveOpen(true);
+              }}
+              className="rounded-md border border-amber-700/60 bg-amber-950/30 px-2 py-1 text-[11px] font-bold text-amber-300 hover:bg-amber-900/40"
+              title="Done pulling? Save a snapshot and mark it as the version that's built in paper"
+            >
+              <Hammer size={11} className="inline align-[-1px]" /> Mark as built…
+            </button>
+            <span className="text-[10px] text-stone-500">
+              Check cards off as you pull them — edits, drags, and swaps still work as normal.
+            </span>
+          </div>
+        )}
 
         {/* ── Body: columns + dock ───────────────────────────────────────── */}
         <div className="flex min-h-0 flex-1">
@@ -1133,6 +1414,11 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
         />
       )}
 
+      {/* Physical changes — take out / put in vs. a built snapshot */}
+      {changesOpen && original && (
+        <ChangesModal original={original} draft={draft} onClose={() => setChangesOpen(false)} />
+      )}
+
       {/* Suggestions — otag discovery / EDHREC synergy */}
       {suggest !== null && (
         <SuggestionsModal
@@ -1169,9 +1455,24 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
               placeholder="Changelog title (optional)"
               className="mb-3 w-full rounded-md border border-stone-700 bg-stone-900 px-3 py-1.5 text-xs outline-none focus:border-emerald-600"
             />
+            <label className="mb-3 flex cursor-pointer items-center gap-2 text-xs text-stone-300">
+              <input
+                type="checkbox"
+                checked={markBuilt}
+                onChange={(e) => setMarkBuilt(e.target.checked)}
+                className="accent-amber-600"
+              />
+              <span>
+                <Hammer size={11} className="inline align-[-1px] text-amber-400" /> This list is
+                what's built in paper
+                <span className="block text-[10px] text-stone-600">
+                  Applies with “Save + snapshot” — the snapshot becomes the deck's built version.
+                </span>
+              </span>
+            </label>
             <p className="mb-3 text-[10px] text-stone-600">
-              Saving with a changelog stores a full snapshot — restorable any time from the
-              History tab.
+              “Save + snapshot” records a restorable version (History tab) and a baseline for
+              the Changes view — do it whenever the paper deck matches.
             </p>
             <div className="flex justify-end gap-2">
               <button
@@ -1179,14 +1480,14 @@ export default function DeckEditPage({ params }: { params: Promise<{ id: string 
                 disabled={saving}
                 className="rounded-md bg-stone-800 px-3 py-1.5 text-xs font-semibold text-stone-300 hover:bg-stone-700 disabled:opacity-40"
               >
-                Save without changelog
+                Save only
               </button>
               <button
                 onClick={() => void save(true)}
                 disabled={saving}
                 className="rounded-md bg-emerald-700 px-4 py-1.5 text-xs font-bold text-white hover:bg-emerald-600 disabled:opacity-40"
               >
-                {saving ? "Saving…" : "Save + changelog entry"}
+                {saving ? "Saving…" : "Save + snapshot"}
               </button>
             </div>
           </div>

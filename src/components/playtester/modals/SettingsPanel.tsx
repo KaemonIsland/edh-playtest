@@ -1,6 +1,7 @@
 "use client";
 
 import { useGameStore } from "@/lib/game/store";
+import { CARD_SIZES } from "@/components/ui/CardSizeSelect";
 import { Modal } from "./Modal";
 
 export function SettingsPanel() {
@@ -36,12 +37,11 @@ export function SettingsPanel() {
     </button>
   );
 
-  const SIZE_PRESETS = [
-    { label: "Small", value: 90 },
-    { label: "Default", value: 120 },
-    { label: "Large", value: 160 },
-    { label: "X-Large", value: 200 },
-  ];
+  // Same size steps as the rest of the app (the header's Cards dropdown).
+  const SIZE_PRESETS = (Object.keys(CARD_SIZES) as (keyof typeof CARD_SIZES)[]).map((k) => ({
+    label: CARD_SIZES[k].label,
+    value: CARD_SIZES[k].px,
+  }));
 
   const LAYOUTS = [
     { label: "Stacked (top)", value: "stacked" as const },
@@ -99,7 +99,7 @@ export function SettingsPanel() {
             <input
               type="range"
               min={70}
-              max={200}
+              max={320}
               step={5}
               value={prefs.cardSize}
               onChange={(e) => setPref("cardSize", parseInt(e.target.value, 10))}
@@ -111,6 +111,12 @@ export function SettingsPanel() {
             </span>
           </div>
         </div>
+        <Toggle
+          label="Hover card preview"
+          hint="Show the big top-left preview while hovering a card."
+          value={prefs.showHoverPreview}
+          onChange={(v) => setPref("showHoverPreview", v)}
+        />
         <Toggle
           label="Draw on next turn"
           hint="“Next turn” untaps everything and draws a card for turn."

@@ -51,6 +51,10 @@ interface DeckUsage {
   isCommander: boolean;
   categories: string[];
   proxy: boolean;
+  /** The deck has a version marked as physically built. */
+  built: boolean;
+  /** …and this card is in that built snapshot (i.e. actually in sleeves). */
+  inBuiltVersion: boolean;
 }
 
 function printingLabel(p: ScryCard): string {
@@ -177,6 +181,23 @@ export function CardDetailModal({
           ? { card: full.deck.commanders.find((c) => c.oracle_id === card.oracle_id)!, quantity: 1, isCommander: true, categories: [], proxy: false }
           : undefined);
       if (e) {
+        // Built status: does the deck point at a built version, and is this
+        // card actually in that snapshot (physically in sleeves)?
+        let built = false;
+        let inBuiltVersion = false;
+        if (full.deck.builtVersionId != null) {
+          built = true;
+          const versions = await repo.listVersions(m.id);
+          const builtVersion = versions.find(
+            (v) => String(v.id) === String(full.deck.builtVersionId),
+          );
+          inBuiltVersion =
+            builtVersion?.snapshot?.some(
+              (sn) =>
+                sn.oracleId === card.oracle_id ||
+                sn.name.toLowerCase() === e.card.name.toLowerCase(),
+            ) ?? false;
+        }
         usages.push({
           id: m.id,
           name: m.name,
@@ -186,6 +207,8 @@ export function CardDetailModal({
           isCommander: e.isCommander,
           categories: e.categories,
           proxy: e.proxy ?? false,
+          built,
+          inBuiltVersion,
         });
       }
     }
@@ -735,6 +758,30 @@ export function CardDetailModal({
                           {d.isCommander && (
                             <span className="rounded bg-amber-900/60 px-1.5 py-0.5 text-[9px] font-bold text-amber-300">
                               CMDR
+                            </span>
+                          )}
+                          {d.built ? (
+                            d.inBuiltVersion ? (
+                              <span
+                                className="rounded bg-amber-900/60 px-1.5 py-0.5 text-[9px] font-bold text-amber-300"
+                                title="This deck is built in paper and its built version includes this card — the physical copy is in those sleeves"
+                              >
+                                IN PAPER
+                              </span>
+                            ) : (
+                              <span
+                                className="rounded bg-sky-950/60 px-1.5 py-0.5 text-[9px] font-bold text-sky-300"
+                                title="This deck is built in paper, but this card isn't in the built version — the physical copy is still free"
+                              >
+                                NOT IN BUILD
+                              </span>
+                            )
+                          ) : (
+                            <span
+                              className="rounded bg-stone-800 px-1.5 py-0.5 text-[9px] font-bold text-stone-500"
+                              title="This deck isn't built in paper — the card is only in a list, the physical copy is free"
+                            >
+                              THEORY
                             </span>
                           )}
                           {d.categories.map((c) => (

@@ -84,6 +84,13 @@ function ZonePile({
           },
         },
         {
+          label: "Reveal N…",
+          onClick: () => {
+            const n = promptInt("Reveal how many?");
+            if (n) openModal({ kind: "revealx", count: n });
+          },
+        },
+        {
           label: "Reveal top card",
           onClick: () => {
             g.revealTop();
@@ -302,7 +309,6 @@ function CommanderCard({
  */
 function TokensPile() {
   const deck = useGameStore((s) => s.deck);
-  const createTokenFromCard = useGameStore((s) => s.createTokenFromCard);
   const setPreview = useUiStore((s) => s.setPreview);
   const [tokens, setTokens] = useState<ScryCard[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -339,10 +345,10 @@ function TokensPile() {
             e.dataTransfer.setData("text/plain", selected.name);
             e.dataTransfer.effectAllowed = "copy";
           }}
-          onClick={() => createTokenFromCard(selected)}
+          onClick={() => setPickerOpen(true)}
           onMouseEnter={() => setPreview({ card: selected, flipped: 0 })}
           onMouseLeave={() => setPreview(null)}
-          title={`${selected.name} — click to create, or drag onto the battlefield`}
+          title={`${selected.name} — click to choose a token, drag this one onto the battlefield`}
           className="relative cursor-grab active:cursor-grabbing"
         >
           <CardImage
@@ -362,16 +368,6 @@ function TokensPile() {
         >
           {tokens === null ? "…" : "∅"}
         </div>
-      )}
-
-      {tokens && tokens.length > 1 && (
-        <button
-          onClick={() => setPickerOpen(true)}
-          className="w-full rounded border border-stone-700 bg-stone-900 px-1 py-0.5 text-[10px] font-semibold text-stone-300 hover:bg-stone-800"
-          title="Choose which token is loaded"
-        >
-          Choose ▾
-        </button>
       )}
 
       {pickerOpen && tokens && (

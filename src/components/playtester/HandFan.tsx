@@ -1,8 +1,9 @@
 "use client";
 
-import { memo } from "react";
+import { memo, useState } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { motion } from "framer-motion";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import type { CardInstance, ScryCard } from "@/types";
 import { PLAYER_ID, useGameStore } from "@/lib/game/store";
 import { useUiStore } from "@/lib/game/uiStore";
@@ -96,6 +97,9 @@ export const HandFan = memo(function HandFan() {
 
   const { setNodeRef, isOver } = useDroppable({ id: "hand" });
   const handIds = zoneOrder[PLAYER_ID]?.hand ?? [];
+  // Collapsed: fan hidden so battlefield cards under it stay reachable; the
+  // box remains a (smaller) drop target and shows the card count.
+  const [collapsed, setCollapsed] = useState(false);
 
   // Keep the hand in place, but fade the fan so the battlefield reads through it:
   // while dragging (so you can place cards), or while hovering a board card that
@@ -115,9 +119,9 @@ export const HandFan = memo(function HandFan() {
 
       <div
         ref={setNodeRef}
-        className={`pointer-events-auto relative flex h-[100px] min-w-[260px] items-end justify-center overflow-visible rounded-t-xl px-6 transition-colors duration-150 ${
-          isOver ? "bg-emerald-900/30" : ""
-        }`}
+        className={`pointer-events-auto relative flex min-w-[260px] items-end justify-center overflow-visible rounded-t-xl px-6 transition-colors duration-150 ${
+          collapsed ? "h-[38px]" : "h-[100px]"
+        } ${isOver ? "bg-emerald-900/30" : ""}`}
       >
         {/* The drop target is only this ~100px box; the fan overflows above it
             without being part of the drop zone, so it doesn't cover the board. */}
@@ -153,6 +157,11 @@ export const HandFan = memo(function HandFan() {
             </button>
           </div>
         )}
+        {collapsed ? (
+          <div className="pb-2 text-[11px] font-semibold text-stone-500 select-none">
+            Hand ({handIds.length}) — hidden
+          </div>
+        ) : (
         <div
           className="flex items-end justify-center transition-opacity duration-150"
           style={{ opacity: fanOpacity }}
@@ -174,7 +183,16 @@ export const HandFan = memo(function HandFan() {
             <div className="pb-6 text-xs text-stone-600 select-none">Hand is empty</div>
           )}
         </div>
+        )}
       </div>
+
+      <button
+        onClick={() => setCollapsed((v) => !v)}
+        title={collapsed ? "Show your hand" : "Hide your hand (keeps the drop zone)"}
+        className="pointer-events-auto mb-10 flex h-11 w-11 items-center justify-center rounded-full border border-stone-700 bg-stone-900/90 text-stone-300 shadow-lg transition hover:bg-stone-800"
+      >
+        {collapsed ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+      </button>
 
       <button
         onClick={redo}

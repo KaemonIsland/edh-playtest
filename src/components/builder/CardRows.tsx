@@ -1,6 +1,7 @@
 "use client";
 
 import { useDraggable } from "@dnd-kit/core";
+import { Check } from "lucide-react";
 import type { ScryCard } from "@/types";
 import type { LensEntry } from "@/lib/deck/stats";
 import { CardImage } from "@/components/cards/CardImage";
@@ -56,18 +57,27 @@ export function TextRow({
   le,
   owned,
   selected,
+  dragId,
+  checked,
+  onToggleCheck,
   onOpen,
   onToggleSelect,
 }: {
   le: LensEntry;
   owned: boolean;
   selected: boolean;
+  /** Override the draggable id when the same entry renders twice (e.g. the
+   * dock's "New considering" uses `new:<cardId>`). */
+  dragId?: string;
+  /** Build mode: pulled-from-the-binder check state. */
+  checked?: boolean;
+  onToggleCheck?: () => void;
   onOpen: () => void;
   onToggleSelect: () => void;
 }) {
   const { entry, ghost, home } = le;
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: entry.card.id,
+    id: dragId ?? entry.card.id,
     disabled: ghost,
   });
   return (
@@ -78,10 +88,37 @@ export function TextRow({
       onClick={(e) => (e.shiftKey && !ghost ? onToggleSelect() : onOpen())}
       className={`flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs transition ${
         ghost ? "cursor-pointer text-stone-400 opacity-70" : "cursor-grab text-stone-300"
-      } ${selected ? "bg-emerald-950/40 ring-1 ring-emerald-600" : "hover:bg-stone-800"}`}
+      } ${selected ? "bg-emerald-950/40 ring-1 ring-emerald-600" : "hover:bg-stone-800"} ${
+        checked ? "opacity-50" : ""
+      }`}
       style={{ opacity: isDragging ? 0.3 : undefined }}
       title={ghost ? `${entry.card.name} — home: ${home}` : undefined}
     >
+      {onToggleCheck && !ghost && (
+        <span
+          role="checkbox"
+          aria-checked={checked}
+          tabIndex={0}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleCheck();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.stopPropagation();
+              onToggleCheck();
+            }
+          }}
+          title={checked ? "Pulled — click to un-check" : "Click when you've pulled this card"}
+          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition ${
+            checked
+              ? "border-emerald-500 bg-emerald-600 text-white"
+              : "border-stone-600 hover:border-emerald-500"
+          }`}
+        >
+          {checked && <Check size={10} />}
+        </span>
+      )}
       <span className="w-4 shrink-0 text-stone-600">{entry.quantity}</span>
       {!owned && !ghost && (
         <span
@@ -89,7 +126,7 @@ export function TextRow({
           title="Not in your collection"
         />
       )}
-      <span className="min-w-0 flex-1 truncate">{entry.card.name}</span>
+      <span className={`min-w-0 flex-1 truncate ${checked ? "line-through" : ""}`}>{entry.card.name}</span>
       {ghost && home ? (
         <span className="shrink-0 text-[9px] text-stone-500 italic">· {home}</span>
       ) : (
@@ -113,18 +150,25 @@ export function StackCard({
   le,
   owned,
   selected,
+  dragId,
+  checked,
+  onToggleCheck,
   onOpen,
   onToggleSelect,
 }: {
   le: LensEntry;
   owned: boolean;
   selected: boolean;
+  dragId?: string;
+  /** Build mode: pulled-from-the-binder check state. */
+  checked?: boolean;
+  onToggleCheck?: () => void;
   onOpen: () => void;
   onToggleSelect: () => void;
 }) {
   const { entry, ghost, home } = le;
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: entry.card.id,
+    id: dragId ?? entry.card.id,
     disabled: ghost,
   });
   return (
@@ -133,7 +177,7 @@ export function StackCard({
       {...listeners}
       {...attributes}
       onClick={(e) => (e.shiftKey && !ghost ? onToggleSelect() : onOpen())}
-      className={`relative -mt-[120%] transition-[margin] duration-150 first:mt-0 hover:z-30 [&:hover+*]:mt-0 ${
+      className={`group relative -mt-[120%] transition-[margin] duration-150 first:mt-0 hover:z-30 [&:hover+*]:mt-0 ${
         ghost ? "cursor-pointer opacity-70 saturate-50" : "cursor-grab"
       }`}
       style={{ opacity: isDragging ? 0.3 : undefined }}
@@ -149,8 +193,35 @@ export function StackCard({
         card={entry.card}
         className={`w-full shadow-md shadow-black/60 hover:ring-2 hover:ring-stone-500 ${
           selected ? "ring-2 ring-emerald-500" : ""
-        } ${ghost ? "ring-1 ring-stone-600" : ""}`}
+        } ${ghost ? "ring-1 ring-stone-600" : ""} ${
+          checked ? "opacity-50 grayscale" : ""
+        }`}
       />
+      {onToggleCheck && !ghost && (
+        <span
+          role="checkbox"
+          aria-checked={checked}
+          tabIndex={0}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleCheck();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.stopPropagation();
+              onToggleCheck();
+            }
+          }}
+          title={checked ? "Pulled — click to un-check" : "Click when you've pulled this card"}
+          className={`absolute right-1 bottom-1 z-20 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border opacity-0 shadow transition group-last:opacity-100 group-hover:opacity-100 focus-visible:opacity-100 ${
+            checked
+              ? "border-emerald-400 bg-emerald-600 text-white"
+              : "border-stone-500 bg-black/70 hover:border-emerald-400 hover:bg-emerald-900/60"
+          }`}
+        >
+          {checked && <Check size={14} />}
+        </span>
+      )}
       {entry.quantity > 1 && (
         <span className="absolute top-1 left-1 z-10 rounded-full bg-black/80 px-1.5 text-[10px] font-bold text-white">
           ×{entry.quantity}
@@ -189,14 +260,21 @@ export function CardRow(props: {
   le: LensEntry;
   owned: boolean;
   selected: boolean;
+  dragId?: string;
+  checked?: boolean;
+  onToggleCheck?: () => void;
   onOpen: (card: ScryCard) => void;
   onToggleSelect: (cardId: string) => void;
 }) {
-  const { view, le, owned, selected, onOpen, onToggleSelect } = props;
+  const { view, le, owned, selected, dragId, checked, onToggleCheck, onOpen, onToggleSelect } =
+    props;
   const shared = {
     le,
     owned,
     selected,
+    dragId,
+    checked,
+    onToggleCheck,
     onOpen: () => onOpen(le.entry.card),
     onToggleSelect: () => onToggleSelect(le.entry.card.id),
   };

@@ -1,6 +1,6 @@
 "use client";
 
-import { Lightbulb, Undo2, X } from "lucide-react";
+import { Camera, Hammer, Lightbulb, Undo2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import type { Deck, DeckEntry, ScryCard } from "@/types";
@@ -16,8 +16,7 @@ import {
   groupEntries,
   type DeckStats,
 } from "@/lib/deck/stats";
-import { diffSnapshots, restoreSnapshot } from "@/lib/deck/versions";
-import { ManaCost } from "@/components/cards/ManaCost";
+import { diffSnapshots, restoreSnapshot, snapshotOf } from "@/lib/deck/versions";
 
 /**
  * The builder's right-hand dock: judgment lives here, permanently visible.
@@ -26,7 +25,7 @@ import { ManaCost } from "@/components/cards/ManaCost";
  * (Maybeboard/Ideas/…) stay pinned — always visible, always drop targets.
  */
 
-type DockTab = "skeleton" | "stats" | "history";
+type DockTab = "skeleton" | "stats" | "history" | "notes";
 
 const PIP_STYLE: Record<string, string> = {
   W: "bg-amber-100",
@@ -192,6 +191,23 @@ export function DeckDock({
     });
   };
 
+  /** Record the current list (unsaved edits included) as a restorable version. */
+  const takeSnapshot = async () => {
+    const fallback = `Snapshot — ${new Date().toLocaleDateString()}`;
+    const title = window.prompt("Snapshot title:", fallback);
+    if (title === null) return;
+    await getRepo().addVersion({
+      deckId: deck.id,
+      date: Date.now(),
+      title: title.trim() || fallback,
+      adds: [],
+      cuts: [],
+      snapshot: snapshotOf(deck),
+    });
+    await loadVersions();
+    setHistoryNote("Snapshot recorded — it's now a baseline for Changes and Restore.");
+  };
+
   const restore = async (v: DeckVersion) => {
     if (!v.snapshot?.length) return;
     setRestoring(true);
@@ -234,6 +250,7 @@ export function DeckDock({
             ["skeleton", "Skeleton"],
             ["stats", "Stats"],
             ["history", "History"],
+            ["notes", "Notes"],
           ] as const
         ).map(([key, label]) => (
           <button
@@ -482,6 +499,14 @@ export function DeckDock({
       {/* ---- History ---- */}
       {tab === "history" && (
         <div className="border-b border-stone-800 p-3">
+          <button
+            onClick={() => void takeSnapshot()}
+            className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-md border border-emerald-800/60 bg-emerald-950/30 px-3 py-1.5 text-[11px] font-bold text-emerald-300 hover:bg-emerald-900/40"
+            title="Save the current list (including unsaved edits) as a restorable snapshot"
+          >
+            <Camera size={12} />
+            Snapshot current list
+          </button>
           {historyNote && (
             <p className="mb-2 rounded-md border border-emerald-800/50 bg-emerald-950/30 px-2 py-1.5 text-[10px] text-emerald-300">
               {historyNote}
@@ -518,7 +543,7 @@ export function DeckDock({
                 Save).
               </p>
               {versions.map((v) => (
-                <div key={String(v.id)} className="rounded-md bg-stone-900 p-2">
+                <div key={String(v.id)} className="group rounded-md bg-stone-900 p-2">
                   <div className="flex items-center gap-1.5">
                     {v.snapshot && (
                       <input
@@ -537,6 +562,30 @@ export function DeckDock({
                     >
                       {v.title}
                     </button>
+                    {deck.builtVersionId != null && String(v.id) === String(deck.builtVersionId) ? (
+                      <button
+                        onClick={() => update((d) => void (d.builtVersionId = undefined))}
+                        className="shrink-0 rounded-full border border-amber-700/60 bg-amber-950/40 px-1.5 text-[8px] font-bold tracking-wide text-amber-300 uppercase"
+                        title="This version is built in paper — click to unmark (then Save)"
+                      >
+                        <Hammer size={8} className="inline align-[-1px]" /> in paper
+                      </button>
+                    ) : (
+                      v.snapshot && (
+                        <button
+                          onClick={() => {
+                            update((d) => void (d.builtVersionId = v.id));
+                            setHistoryNote(
+                              `“${v.title}” marked as built in paper — Save to keep it.`,
+                            );
+                          }}
+                          className="shrink-0 rounded-full border border-stone-700 px-1.5 text-[8px] font-bold tracking-wide text-stone-500 uppercase opacity-0 transition group-hover:opacity-100 hover:border-amber-700 hover:text-amber-300"
+                          title="Mark this version as what's physically built"
+                        >
+                          built?
+                        </button>
+                      )
+                    )}
                     <span className="shrink-0 text-[9px] text-stone-600">
                       {new Date(v.date).toLocaleDateString()}
                     </span>
@@ -575,6 +624,25 @@ export function DeckDock({
         </div>
       )}
 
+      {/* ---- Notes ---- */}
+      {tab === "notes" && (
+        <div className="flex min-h-64 flex-col border-b border-stone-800 p-3">
+          <textarea
+            value={deck.notes ?? ""}
+            onChange={(e) => update((d) => void (d.notes = e.target.value))}
+            placeholder={
+              "Scratch pad — also editable during playtests (Notes button by the Log).\n\n" +
+              "e.g.\n· Cultivate always dead in hand\n· Want a 3rd wipe\n· Try Ozolith here"
+            }
+            className="min-h-56 flex-1 resize-y rounded-md border border-stone-800 bg-stone-900/60 p-2.5 text-xs leading-relaxed text-stone-200 outline-none placeholder:text-stone-600 focus:border-emerald-600"
+          />
+          <p className="mt-1.5 text-[10px] text-stone-600">
+            Saved with the deck when you hit Save. Playtest edits write straight to the saved
+            deck.
+          </p>
+        </div>
+      )}
+
       {/* ---- Boards: pinned, always visible ---- */}
       <div className="flex flex-col gap-2 p-3">
         {newConsidering.length > 0 && (
@@ -586,19 +654,18 @@ export function DeckDock({
                 ({newConsidering.length})
               </span>
             </div>
-            <div className="flex flex-col gap-0.5">
+            <div className={`flex flex-col ${viewMode === "text" ? "gap-0.5" : ""}`}>
               {newConsidering.map((e) => (
-                <button
+                <CardRow
                   key={`new-${e.card.id}`}
-                  onClick={() => onOpenCard(e.card)}
-                  className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs text-stone-300 hover:bg-stone-800"
-                >
-                  <span className="min-w-0 flex-1 truncate">{e.card.name}</span>
-                  <ManaCost cost={e.card.mana_cost} size={10} className="shrink-0" />
-                  <span className="shrink-0 font-mono text-[9px] text-stone-600 uppercase">
-                    {e.card.set ?? ""}
-                  </span>
-                </button>
+                  view={viewMode}
+                  le={{ entry: e, ghost: false }}
+                  owned={ownedIds.has(e.card.oracle_id)}
+                  selected={selection.has(e.card.id)}
+                  dragId={`new:${e.card.id}`}
+                  onOpen={onOpenCard}
+                  onToggleSelect={onToggleSelect}
+                />
               ))}
             </div>
           </div>

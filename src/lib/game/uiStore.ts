@@ -27,6 +27,8 @@ export type ModalKind =
   | { kind: "none" }
   | { kind: "browse"; zone: Zone; title: string; shuffleAfter: boolean; playerId: string }
   | { kind: "scry"; count: number; surveil: boolean }
+  | { kind: "revealx"; count: number }
+  | { kind: "carddetail"; card: ScryCard }
   | { kind: "token"; playerId: string }
   | { kind: "dice" }
   | { kind: "keybinds" }

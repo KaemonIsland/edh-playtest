@@ -50,6 +50,8 @@ interface UiPrefs {
   drawOnTurn: boolean;
   snapToGrid: boolean;
   showPhaseStepper: boolean;
+  /** Show the big top-left card preview while hovering a card. */
+  showHoverPreview: boolean;
   /** Card width in px (height is width × 1.4). Accessibility sizing. */
   cardSize: number;
   /** Opponent board placement: stacked on top, or beside (ultra-wide). */
@@ -61,6 +63,7 @@ const DEFAULT_PREFS: UiPrefs = {
   drawOnTurn: true,
   snapToGrid: false,
   showPhaseStepper: false,
+  showHoverPreview: true,
   cardSize: 100,
   layoutMode: "stacked",
 };

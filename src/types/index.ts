@@ -121,6 +121,8 @@ export interface Deck {
   colorIdentity: string[];
   /** One-sentence thesis ("the pitch") shown in the builder header. */
   pitch?: string;
+  /** Free-form scratch pad — written during playtests, read while building. */
+  notes?: string;
   /** Category targets for the skeleton panel, e.g. { Ramp: 10, Lands: 35 }. */
   skeleton?: Record<string, number>;
   /** User-made tags for sorting/filtering the deck library. */
@@ -129,6 +131,9 @@ export interface Deck {
   categorySettings?: Record<string, CategorySetting>;
   /** Commander bracket (1–5). Unset = show the auto-guess. */
   bracket?: number;
+  /** The version (snapshot) currently assembled in paper. Unset = theorycraft.
+   * Lets card usage distinguish "in sleeves" from "in a list somewhere". */
+  builtVersionId?: number | string;
   roleOverrides?: RoleOverrides;
 }
 

@@ -30,6 +30,7 @@ import { ContextMenu } from "./ContextMenu";
 import { ActionLog } from "./ActionLog";
 import { LibraryBrowser } from "./modals/LibraryBrowser";
 import { ScryModal } from "./modals/ScryModal";
+import { RevealXModal } from "./modals/RevealXModal";
 import { TokenModal } from "./modals/TokenModal";
 import { DicePanel } from "./modals/DicePanel";
 import { KeybindsPanel } from "./modals/KeybindsPanel";
@@ -37,6 +38,8 @@ import { SnapshotsPanel } from "./modals/SnapshotsPanel";
 import { SettingsPanel } from "./modals/SettingsPanel";
 import { LogGameModal } from "./modals/LogGameModal";
 import { OpponentsModal } from "./modals/OpponentsModal";
+import { NotesPanel } from "./NotesPanel";
+import { CardDetailModal } from "@/components/builder/CardDetailModal";
 
 const DROP_ZONES: Zone[] = ["battlefield", "hand", "library", "graveyard", "exile", "command"];
 const GRID = 20;
@@ -199,6 +202,7 @@ export function PlaytesterRoot() {
               <Battlefield />
             </div>
             <ActionLog />
+            <NotesPanel />
             <HandFan />
           </div>
           {firstBotId && g.prefs.layoutMode === "side-right" && (
@@ -223,10 +227,12 @@ export function PlaytesterRoot() {
       <DragOverlay dropAnimation={null}>
         {dragInst &&
           (() => {
-            // Cards dragged from the small side piles (library/command/grave/exile)
-            // render larger so they're easy to read while moving.
-            const fromPile = ["library", "command", "graveyard", "exile"].includes(dragInst.zone);
-            const w = fromPile ? Math.max(g.prefs.cardSize, 150) : g.prefs.cardSize;
+            // Drag previews match the hand-card size (cardSize × 1.1) everywhere
+            // except battlefield drags, which match the battlefield card size.
+            const w =
+              dragInst.zone === "battlefield"
+                ? g.prefs.cardSize
+                : Math.round(g.prefs.cardSize * 1.1);
             return (
               <CardImage
                 card={g.cards[dragInst.cardId]}
@@ -250,6 +256,14 @@ export function PlaytesterRoot() {
         />
       )}
       {ui.modal.kind === "scry" && <ScryModal count={ui.modal.count} surveil={ui.modal.surveil} />}
+      {ui.modal.kind === "revealx" && <RevealXModal count={ui.modal.count} />}
+      {ui.modal.kind === "carddetail" && (
+        <CardDetailModal
+          card={ui.modal.card}
+          onClose={ui.closeModal}
+          onNavigate={(c) => ui.openModal({ kind: "carddetail", card: c })}
+        />
+      )}
       {ui.modal.kind === "token" && <TokenModal playerId={ui.modal.playerId} />}
       {ui.modal.kind === "dice" && <DicePanel />}
       {ui.modal.kind === "keybinds" && <KeybindsPanel onChange={setKeybinds} />}

@@ -1,4 +1,5 @@
 import type { Deck, DeckEntry, RoleOverrides, ScryCard } from "@/types";
+import { byColor } from "@/lib/cards/sort";
 import {
   frontTypeLine,
   hasLandFace,
@@ -429,7 +430,10 @@ export function groupEntries(deck: Deck): { group: string; entries: DeckEntry[];
  * premier column, ghosted everywhere else.
  * "type" / "curve" / "color" regroup without touching category data.
  */
-export type GroupLens = "category" | "category-all" | "type" | "curve" | "color";
+export type GroupLens = "category" | "category-all" | "type" | "curve" | "color" | "rarity";
+
+/** In-stack ordering (independent of the grouping lens). */
+export type StackSort = "cmc" | "name" | "color" | "rarity" | "type";
 
 export interface LensEntry {
   entry: DeckEntry;
@@ -461,18 +465,56 @@ function curveGroup(card: ScryCard): string {
   return card.cmc >= 7 ? "7+ drops" : `${Math.floor(card.cmc)} drops`;
 }
 
-function sortEntries(list: LensEntry[]): LensEntry[] {
-  return list.sort(
-    (a, b) =>
-      a.entry.card.cmc - b.entry.card.cmc || a.entry.card.name.localeCompare(b.entry.card.name),
-  );
+const RARITY_RANK: Record<string, number> = { mythic: 0, rare: 1, uncommon: 2, common: 3 };
+
+function rarityRank(card: ScryCard): number {
+  return RARITY_RANK[(card.rarity ?? "").toLowerCase()] ?? 4;
+}
+
+const RARITY_GROUP_ORDER = ["Mythic", "Rare", "Uncommon", "Common", "Other"];
+
+function rarityGroup(card: ScryCard): string {
+  const r = (card.rarity ?? "").toLowerCase();
+  if (r === "mythic") return "Mythic";
+  if (r === "rare") return "Rare";
+  if (r === "uncommon") return "Uncommon";
+  if (r === "common") return "Common";
+  return "Other";
+}
+
+function stackComparator(sort: StackSort): (a: LensEntry, b: LensEntry) => number {
+  const name = (a: LensEntry, b: LensEntry) => a.entry.card.name.localeCompare(b.entry.card.name);
+  switch (sort) {
+    case "name":
+      return name;
+    case "color":
+      return (a, b) => byColor(a.entry.card, b.entry.card);
+    case "rarity":
+      // Rarity rank, then color inside each rarity — "which binder/box is it in".
+      return (a, b) =>
+        rarityRank(a.entry.card) - rarityRank(b.entry.card) ||
+        byColor(a.entry.card, b.entry.card);
+    case "type":
+      return (a, b) => {
+        const ia = GROUP_ORDER.indexOf(typeGroup(a.entry.card));
+        const ib = GROUP_ORDER.indexOf(typeGroup(b.entry.card));
+        if (ia !== ib) return ia - ib;
+        return a.entry.card.cmc - b.entry.card.cmc || name(a, b);
+      };
+    default: // cmc
+      return (a, b) => a.entry.card.cmc - b.entry.card.cmc || name(a, b);
+  }
 }
 
 /**
  * Group the deck's *included* entries (commanders and excluded boards are the
  * caller's job) through the chosen lens.
  */
-export function groupEntriesByLens(deck: Deck, lens: GroupLens): LensGroup[] {
+export function groupEntriesByLens(
+  deck: Deck,
+  lens: GroupLens,
+  sort: StackSort = "cmc",
+): LensGroup[] {
   const settings = deck.categorySettings ?? {};
   const included = deck.entries.filter((e) => {
     if (e.isCommander) return false;
@@ -495,6 +537,8 @@ export function groupEntriesByLens(deck: Deck, lens: GroupLens): LensGroup[] {
       push(curveGroup(e.card), { entry: e, ghost: false });
     } else if (lens === "color") {
       push(colorGroup(e.card), { entry: e, ghost: false });
+    } else if (lens === "rarity") {
+      push(rarityGroup(e.card), { entry: e, ghost: false });
     } else {
       push(primary, { entry: e, ghost: false });
       if (lens === "category-all") {
@@ -511,12 +555,15 @@ export function groupEntriesByLens(deck: Deck, lens: GroupLens): LensGroup[] {
   const order =
     lens === "color"
       ? COLOR_GROUP_ORDER
-      : lens === "curve"
-        ? ["0 drops", "1 drops", "2 drops", "3 drops", "4 drops", "5 drops", "6 drops", "7+ drops", "Lands"]
-        : GROUP_ORDER;
+      : lens === "rarity"
+        ? RARITY_GROUP_ORDER
+        : lens === "curve"
+          ? ["0 drops", "1 drops", "2 drops", "3 drops", "4 drops", "5 drops", "6 drops", "7+ drops", "Lands"]
+          : GROUP_ORDER;
 
+  const cmp = stackComparator(sort);
   return [...groups.entries()]
-    .map(([group, entries]) => ({ group, entries: sortEntries(entries) }))
+    .map(([group, entries]) => ({ group, entries: entries.sort(cmp) }))
     .sort((a, b) => {
       const ia = order.indexOf(a.group);
       const ib = order.indexOf(b.group);

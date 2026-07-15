@@ -2,6 +2,7 @@
 
 import {
   ArrowRight,
+  Info,
   Copy,
   Crown,
   Layers,
@@ -284,6 +285,20 @@ export function buildCardMenu(instanceId: string): MenuItem[] {
       icon: ArrowRight,
       children: moveToSubmenu([instanceId], inst.zone, isCommander),
     });
+  }
+
+  // Every zone: full card details (wishlist, decks, rulings — and readable
+  // oracle text when the printing's art hides it).
+  const cardData = g.cards[inst.cardId];
+  if (cardData) {
+    items.push(
+      { label: "", separator: true },
+      {
+        label: "Card details",
+        icon: Info,
+        onClick: () => useUiStore.getState().openModal({ kind: "carddetail", card: cardData }),
+      },
+    );
   }
 
   return items.filter((i) => i.separator || i.label);

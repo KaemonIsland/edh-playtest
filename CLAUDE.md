@@ -32,7 +32,8 @@ previously accumulated near-duplicate mini-UIs; that is the failure mode to avoi
 | Card detail (categories, printings, swaps, rulings, in-decks) | `CardDetailModal` — THE depth view; open it on card click everywhere | `src/components/builder/CardDetailModal.tsx` |
 | Full card search (filters + otags + scope) | `CardSearchModal` (`initialFilters`/`initialScope`/`autoRun` for presets like Browse collection) | `src/components/builder/CardSearchModal.tsx` |
 | Card discovery (otags, EDHREC synergy) | `SuggestionsModal` | `src/components/builder/SuggestionsModal.tsx` |
-| Builder side panel (skeleton/stats/history/boards) | `DeckDock` | `src/components/builder/DeckDock.tsx` |
+| Builder side panel (skeleton/stats/history/notes/boards) | `DeckDock` | `src/components/builder/DeckDock.tsx` |
+| Physical pull list (take out / put in vs. a snapshot) | `ChangesModal`; Build mode = `pull` prop on `CardRow`/`CategoryColumn` | `src/components/builder/ChangesModal.tsx` |
 | Playtester dialog | `Modal` (wraps ModalShell, wired to game UI store) | `src/components/playtester/modals/Modal.tsx` |
 
 ## Hard conventions
@@ -53,6 +54,13 @@ previously accumulated near-duplicate mini-UIs; that is the failure mode to avoi
 - **Multi-face cards** (MDFC/adventure/split/room): classify by front face
   (`frontTypeLine`/`typeGroup`), but land counts include any land face (`hasLandFace`).
 - New deck entries set `addedAt: Date.now()` (powers "New considering").
+- `Deck.builtVersionId` points at the version snapshot physically assembled in paper
+  (unset = theorycraft). Card-usage UI ("In decks", header chip, Changes baseline) must
+  distinguish in-sleeves from in-a-list via this pointer.
+- `Deck.notes` is the playtest scratch pad: written from the playtester's Notes panel
+  (write-through localStorage + debounced repo save), read/edited in the builder dock's
+  Notes tab. Playtest card sizing is its own system (`prefs.cardSize`, presets aligned to
+  `CARD_SIZES`) — the global `--card-min` never applies to `/play`.
 - **Card grids**: always `className={CARD_GRID}` (auto-fill columns off the `--card-min` CSS
   variable). The header's `CardSizeSelect` sets that variable globally — never hardcode
   `grid-cols-N` for card tiles.
